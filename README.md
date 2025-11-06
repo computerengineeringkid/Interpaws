@@ -9,6 +9,7 @@ Interpaws is a full-stack veterinary clinic management application with a FastAP
 ## Tech Stack
 
 ### Backend
+
 - Language: Python 3.10+
 - Web framework: FastAPI
 - ASGI server: Uvicorn
@@ -16,12 +17,14 @@ Interpaws is a full-stack veterinary clinic management application with a FastAP
 - Database driver: psycopg2-binary
 
 ### Frontend
+
 - Framework: Next.js 16 (App Router)
 - Language: JavaScript
 - Styling: Tailwind CSS
 - Runtime: Node.js 20
 
 ### Database
+
 - PostgreSQL 15 (Alpine)
 
 ## Repository Structure
@@ -74,6 +77,7 @@ docker compose up -d --build
 ```
 
 This will start three services:
+
 - `db`: PostgreSQL database on port 5432 (internal)
 - `backend`: FastAPI server on http://localhost:8000
 - `frontend`: Next.js app on http://localhost:3000
@@ -173,16 +177,19 @@ Example response:
 ## Architecture Notes
 
 ### Backend
+
 - **Database connection**: Uses environment variable `DATABASE_URL` with fallback to localhost
 - **Startup handling**: Implements retry logic for database connections with healthcheck
 - **Live reload**: Volume-mounted `backend/app` directory for hot-reloading during development
 
 ### Frontend
+
 - **Route groups**: Uses Next.js route groups `(admin)` and `(client)` for organizing pages
 - **Components**: Shared components stored in `src/components/`
 - **Live reload**: Volume-mounted source with separate `node_modules` volume
 
 ### Docker Services
+
 - **db**: Postgres with healthcheck, persistent volume for data
 - **backend**: Waits for healthy database before starting
 - **frontend**: Depends on backend service
@@ -198,6 +205,7 @@ Example response:
 ## Project Roadmap
 
 ### Completed ✅
+
 - [x] Backend structure with FastAPI and SQLAlchemy
 - [x] Frontend structure with Next.js and Tailwind CSS
 - [x] Docker Compose orchestration with healthchecks
@@ -206,6 +214,7 @@ Example response:
 - [x] Development environment with live reload
 
 ### Next Steps
+
 - [ ] Add environment-based settings (pydantic-settings, .env files)
 - [ ] Implement authentication and authorization
 - [ ] Add database migrations (Alembic)
@@ -222,6 +231,7 @@ Example response:
 ### Docker Issues
 
 **Services won't start:**
+
 ```bash
 # Check service status
 docker compose ps
@@ -234,14 +244,17 @@ docker compose restart
 ```
 
 **Database connection errors:**
+
 - Ensure the `db` service shows as "healthy": `docker compose ps`
 - The backend has built-in retry logic and will wait for the database
 - If issues persist, recreate volumes: `docker compose down -v && docker compose up -d --build`
 
 **Port conflicts:**
+
 - If ports 3000 or 8000 are already in use, stop conflicting services or modify ports in `docker-compose.yml`
 
 **Build cache issues:**
+
 ```bash
 # Force rebuild without cache
 docker compose build --no-cache
@@ -251,16 +264,19 @@ docker compose up -d
 ### Local Development Issues
 
 **Backend:**
+
 - Ensure PostgreSQL is running and `DATABASE_URL` is set correctly
 - Verify virtual environment is activated: `which python` should show `.venv/bin/python`
 - Install dependencies: `pip install -r backend/requirements.txt`
 
 **Frontend:**
+
 - Clear Next.js cache: `rm -rf frontend/.next`
 - Reinstall dependencies: `cd frontend && rm -rf node_modules && npm install`
 - Check Node.js version: `node --version` (should be 20+)
 
 **Database:**
+
 - Verify PostgreSQL is running: `docker compose logs db`
 - Manually access the database: `docker compose exec db psql -U user -d interpawsdb`
 

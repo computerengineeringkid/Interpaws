@@ -1,12 +1,35 @@
-from fastapi import FastAPI  # Import the FastAPI framework class
-from . import models  # Import our new models
-from .database import engine  # Import the engine from database.py
+import time
+from fastapi import FastAPI
+from . import models
+from .database import engine
 
-# Create the database tables
-models.Base.metadata.create_all(bind=engine)
+app = FastAPI()
 
-app = FastAPI()  # Instantiate the FastAPI application
+@app.on_event("startup")
+def on_startup() -> None:
+    """Ensure DB is reachable and create tables with simple retries.
 
-@app.get("/")  # Declare a GET endpoint at the root URL path
-def read_root():  # Define the handler function for the root endpoint
-    return {"message": "Welcome to the Interpaws API!"}  # Return a JSON response payload
+    This avoids import-time connection attempts and tolerates slow DB startup.
+    """
+    max_attempts = 10
+    delay_seconds = 2
+
+    from sqlalchemy import text
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # Try to connect; this ensures the database is up
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            # Create tables once connection succeeds
+            models.Base.metadata.create_all(bind=engine)
+            break
+        except Exception:  # noqa: BLE001 - broad to handle transient DB errors
+            if attempt == max_attempts:
+                raise
+            time.sleep(delay_seconds)
+
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Interpaws API!"}

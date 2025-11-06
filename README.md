@@ -17,12 +17,13 @@ Interpaws is a FastAPI-based backend service. Right now, it exposes a simple roo
 ```
 Interpaws/
 ├── backend/
-│   └── venv/
-│       └── main.py    # FastAPI app entrypoint (app object lives here)
-└── README.md          # This file
+│   └── app/
+│       ├── __init__.py   # Package initialization
+│       ├── main.py       # FastAPI app entrypoint (app object lives here)
+│       ├── database.py   # Database configuration and setup
+│       └── models.py     # SQLAlchemy data models
+└── README.md             # This file
 ```
-
-Note: The app entrypoint currently lives under `backend/venv/`. Typically, application code is not stored in a folder named `venv` (which usually refers to a Python virtual environment). In a later cleanup, we can move it to something like `backend/app/main.py` and adjust the run command accordingly.
 
 ## Getting Started
 
@@ -41,21 +42,15 @@ If you already use a global environment management tool (Conda, pyenv, etc.), fe
 
 ### 2) Run the development server
 
-Using Uvicorn, pointing to the `main:app` module, and telling it where to find the file:
+Using Uvicorn to run the FastAPI application:
 
 ```bash
-uvicorn --app-dir backend/venv main:app --reload
+uvicorn app.main:app --reload
 ```
 
 - App will start at: http://127.0.0.1:8000/
 - Interactive API docs (Swagger UI): http://127.0.0.1:8000/docs
 - ReDoc docs: http://127.0.0.1:8000/redoc
-
-If/when we move the file to `backend/app/main.py`, the command would become:
-
-```bash
-uvicorn backend.app.main:app --reload
-```
 
 ## Current API
 
@@ -75,7 +70,6 @@ Example response:
 
 ## Roadmap (draft)
 
-- Organize source into `backend/app/` with routers, models, services, and config.
 - Add a `requirements.txt` or `pyproject.toml` to lock dependencies.
 - Introduce environment-based settings (pydantic-settings or similar).
 - Add a health-check endpoint and basic status page.
@@ -83,7 +77,7 @@ Example response:
 
 ## Troubleshooting
 
-- If `uvicorn` can’t find `main:app`, ensure you used `--app-dir backend/venv` and that `main.py` contains `app = FastAPI()`.
+- If `uvicorn` can't find `app.main:app`, ensure you're running the command from the `backend` directory and that your virtual environment is activated.
 - If you see module errors, verify your virtual environment is activated and dependencies are installed.
 
 ## Contributing

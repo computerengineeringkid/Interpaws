@@ -7,6 +7,7 @@ from sqlalchemy import Date, cast, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .schemas import ChatRequest, ChatResponse
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
@@ -126,3 +127,10 @@ Please explain why these staff members are a good match for this complaint and s
             for staff in top_staff
         ]
     )
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
+    """Simple AI chat passthrough endpoint backed by Ollama."""
+    result_text = await get_ollama_recommendation(request.prompt)
+    return ChatResponse(response=result_text)

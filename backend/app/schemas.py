@@ -39,3 +39,11 @@ class SuggestedStaff(BaseModel):
 class SuggestionResponse(BaseModel):
     generative_recommendation: str
     suggested_staff: List[SuggestedStaff]
+
+
+class ChatRequest(BaseModel):
+    prompt: str
+
+
+class ChatResponse(BaseModel):
+    response: str

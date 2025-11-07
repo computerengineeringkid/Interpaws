@@ -34,9 +34,11 @@ Interpaws/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py      # Package initialization
-│   │   ├── main.py          # FastAPI app entrypoint with startup handlers
+│   │   ├── main.py          # FastAPI app entrypoint with startup handlers & endpoints
 │   │   ├── database.py      # Database configuration and session management
-│   │   └── models.py        # SQLAlchemy data models (Clinic, Staff)
+│   │   ├── models.py        # SQLAlchemy data models (Clinic, Staff, Client, Pet, Booking, Preferences)
+│   │   ├── schemas.py       # Pydantic schemas (BookingBase, BookingCreate, Booking)
+│   │   └── booking_logic.py # Availability check for creating bookings
 │   ├── Dockerfile           # Backend container definition
 │   └── requirements.txt     # Python dependencies
 ├── frontend/
@@ -169,10 +171,55 @@ Example response:
 }
 ```
 
+### Bookings
+
+- `POST /bookings/` → Create a new booking
+
+  - Body (JSON):
+
+    ```json
+    {
+      "start_time": "2025-11-08T10:00:00",
+      "end_time": "2025-11-08T10:30:00",
+      "client_id": 1,
+      "pet_id": 1,
+      "staff_id": 1
+    }
+    ```
+
+  - Availability rule: the staff member must be available, defined as having no existing booking where `existing.start_time < end_time` AND `existing.end_time > start_time`. If unavailable, the API returns `400` with detail "Staff member is not available during this time slot."
+
+  - Quick test:
+
+    ```bash
+    curl -X POST http://localhost:8000/bookings/ \
+      -H "Content-Type: application/json" \
+      -d '{
+        "start_time": "2025-11-08T10:00:00",
+        "end_time": "2025-11-08T10:30:00",
+        "client_id": 1,
+        "pet_id": 1,
+        "staff_id": 1
+      }'
+    ```
+
+- `GET /bookings/{date}` → Get all bookings for a specific calendar date
+
+  - `date` format: `YYYY-MM-DD`
+  - Quick test:
+
+    ```bash
+    curl -X GET "http://localhost:8000/bookings/2025-11-08"
+    ```
+
 ### Database Models
 
 - **Clinic**: `id`, `name`
 - **Staff**: `id`, `name`, `role`
+- **Client**: `id`, `name`, `email`, `clinic_id`
+- **Pet**: `id`, `name`, `species`, `breed`, `client_id`
+- **Booking**: `id`, `start_time`, `end_time`, `status`, `client_id`, `pet_id`, `staff_id`
+- **Preferences**: `id`, `details`, `client_id`
 
 ## Architecture Notes
 
@@ -185,8 +232,11 @@ Example response:
 ### Frontend
 
 - **Route groups**: Uses Next.js route groups `(admin)` and `(client)` for organizing pages
+  - Client Portal (home): `/` — shows the booking form
+  - Admin Dashboard: `/(admin)/admin` — shows calendar and booking list skeletons
 - **Components**: Shared components stored in `src/components/`
 - **Live reload**: Volume-mounted source with separate `node_modules` volume
+- **UI kit**: shadcn/ui with Tailwind; components installed include calendar, card, button, input, label, and select
 
 ### Docker Services
 

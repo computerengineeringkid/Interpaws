@@ -1,3 +1,6 @@
 fastapi[all]
 sqlalchemy
 psycopg2-binary
+pgvector
+sentence-transformers
+ollama

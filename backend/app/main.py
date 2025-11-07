@@ -2,11 +2,12 @@ import time
 from datetime import date
 from typing import List
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy import Date, cast, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .booking_logic import check_availability
 from .database import engine, SessionLocal
 
 app = FastAPI()
@@ -25,6 +26,9 @@ def on_startup() -> None:
             # Try to connect; this ensures the database is up
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+                # Create the vector extension
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                conn.commit()
             # Create tables once connection succeeds
             models.Base.metadata.create_all(bind=engine)
             break
@@ -50,6 +54,15 @@ def get_db():
 
 @app.post("/bookings/", response_model=schemas.Booking)
 async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)):
+    # Check if the staff member is available during the requested time
+    is_available = check_availability(db, booking.staff_id, booking.start_time, booking.end_time)
+    
+    if not is_available:
+        raise HTTPException(
+            status_code=400,
+            detail="Staff member is not available during this time slot."
+        )
+    
     db_booking = models.Booking(**booking.model_dump())  # type: ignore[arg-type]
     db.add(db_booking)
     db.commit()

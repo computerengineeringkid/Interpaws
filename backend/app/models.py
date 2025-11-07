@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Text
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from .database import Base  # Import the Base from database.py
 
 class Clinic(Base):
@@ -14,6 +15,8 @@ class Staff(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     role = Column(String, index=True) # e.g., "Veterinarian", "Technician"
+    skills_description = Column(Text, nullable=True)
+    skills_vector = Column(Vector(384), nullable=True)
 
 
 class Client(Base):
@@ -45,6 +48,8 @@ class Booking(Base):
     client_id = Column(Integer, ForeignKey("clients.id"))
     pet_id = Column(Integer, ForeignKey("pets.id"))
     staff_id = Column(Integer, ForeignKey("staff.id"))
+    complaint_reason = Column(Text, nullable=True)
+    complaint_vector = Column(Vector(384), nullable=True)
 
 
 class Preferences(Base):
@@ -53,3 +58,4 @@ class Preferences(Base):
     id = Column(Integer, primary_key=True, index=True)
     details = Column(Text)
     client_id = Column(Integer, ForeignKey("clients.id"))
+    details_vector = Column(Vector(384), nullable=True)

@@ -47,3 +47,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+
+
+class SmartChatRequest(BaseModel):
+    prompt: str
+    complaint_text: str

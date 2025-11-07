@@ -22,10 +22,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 
-export default function ClientBookingForm() {
+export default function ClientBookingForm({ complaint, setComplaint }) {
   const [petName, setPetName] = useState("");
   const [service, setService] = useState("");
-  const [complaint, setComplaint] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState(null);

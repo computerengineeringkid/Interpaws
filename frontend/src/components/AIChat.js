@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export default function AIChat() {
+export default function AIChat({ complaint }) {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -15,6 +15,16 @@ export default function AIChat() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!prompt.trim()) return;
+
+    // Check if complaint text is provided
+    if (!complaint || !complaint.trim()) {
+      const warningMessage = { 
+        role: "ai", 
+        content: "Please describe your pet's issue in the booking form above first, so I can provide personalized assistance." 
+      };
+      setMessages((prev) => [...prev, warningMessage]);
+      return;
+    }
 
     setIsLoading(true);
 
@@ -29,7 +39,10 @@ export default function AIChat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: userMessage.content }),
+        body: JSON.stringify({ 
+          prompt: userMessage.content,
+          complaint_text: complaint
+        }),
       });
 
       if (!res.ok) {
@@ -57,7 +70,11 @@ export default function AIChat() {
           <ScrollArea className="h-64 w-full rounded-md border p-3">
             <div className="space-y-3">
               {messages.length === 0 ? (
-                <div className="text-sm text-muted-foreground">Start a conversation by typing a prompt below.</div>
+                <div className="text-sm text-muted-foreground">
+                  {complaint && complaint.trim() 
+                    ? "I can see your pet's issue. Ask me anything about recommended staff, treatment options, or scheduling!"
+                    : "Please describe your pet's issue in the booking form above, then ask me questions here."}
+                </div>
               ) : (
                 messages.map((m, idx) => (
                   <div
@@ -87,7 +104,7 @@ export default function AIChat() {
             <Input
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={isLoading ? "Thinking..." : "Ask me anything about your pet or bookings"}
+              placeholder={isLoading ? "Thinking..." : "Ask about staff, treatments, or scheduling..."}
               disabled={isLoading}
             />
             <Button type="submit" disabled={isLoading}>

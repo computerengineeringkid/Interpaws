@@ -7,7 +7,7 @@ from sqlalchemy import Date, cast, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .schemas import ChatRequest, ChatResponse
+from .schemas import ChatRequest, ChatResponse, SmartChatRequest
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
@@ -130,7 +130,35 @@ Please explain why these staff members are a good match for this complaint and s
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
-    """Simple AI chat passthrough endpoint backed by Ollama."""
-    result_text = await get_ollama_recommendation(request.prompt)
+async def handle_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
+    """Smart AI chat endpoint with context from complaint text and staff matching."""
+    # Get embedding for the complaint text
+    complaint_vector = get_embedding(request.complaint_text)
+    
+    # Perform vector search to find top 3 matching staff members
+    top_staff = (
+        db.query(models.Staff.id, models.Staff.name, models.Staff.role)
+        .order_by(models.Staff.skills_vector.l2_distance(complaint_vector))
+        .limit(3)
+        .all()
+    )
+    
+    # Create formatted staff info
+    staff_info = "\n".join([
+        f"- {staff.name} ({staff.role})"
+        for staff in top_staff
+    ])
+    
+    # Create context-aware prompt combining complaint, staff matches, and user's question
+    enhanced_prompt = f"""Context:
+The pet owner has described the following issue: "{request.complaint_text}"
+
+Based on this complaint, we have identified the following staff members as the best matches:
+{staff_info}
+
+User's Question: {request.prompt}
+
+Please answer the user's question using the context provided. Be helpful, friendly, and concise."""
+    
+    result_text = await get_ollama_recommendation(enhanced_prompt)
     return ChatResponse(response=result_text)

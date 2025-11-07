@@ -27,10 +27,32 @@ export default function ClientBookingForm() {
   const [service, setService] = useState("");
   const [complaint, setComplaint] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [isLoading, setIsLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log({ petName, service, complaint, selectedDate });
+    setIsLoading(true);
+    setSuggestions(null);
+    
+    try {
+      const requestBody = {
+        complaint_text: complaint
+      };
+      
+      const response = await fetch('/api/suggest_slots', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      const result = await response.json();
+      setSuggestions(result);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -90,6 +112,35 @@ export default function ClientBookingForm() {
       <CardFooter>
         <Button onClick={handleSubmit} type="button">Get AI Suggestions</Button>
       </CardFooter>
+      
+      {isLoading && (
+        <CardContent>
+          <p className="text-center text-gray-600">Loading AI suggestions...</p>
+        </CardContent>
+      )}
+      
+      {suggestions && !isLoading && (
+        <CardContent className="border-t pt-4">
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-semibold text-lg mb-2">AI Recommendation:</h3>
+              <p className="text-gray-700 whitespace-pre-wrap">{suggestions.generative_recommendation}</p>
+            </div>
+            
+            <div>
+              <h3 className="font-semibold text-lg mb-2">Suggested Staff:</h3>
+              <ul className="space-y-2">
+                {suggestions.suggested_staff.map((staff) => (
+                  <li key={staff.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                    <span className="font-medium">{staff.name}</span>
+                    <span className="text-gray-600">({staff.role})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      )}
     </Card>
   );
 }

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
+from .ai_services import get_embedding, get_ollama_recommendation
 
 app = FastAPI()
 
@@ -76,4 +77,52 @@ async def get_bookings_for_date(date: date, db: Session = Depends(get_db)):
         db.query(models.Booking)
         .filter(cast(models.Booking.start_time, Date) == date)
         .all()
+    )
+
+
+@app.post("/suggest_slots", response_model=schemas.SuggestionResponse)
+async def get_ai_suggestions(
+    request: schemas.SuggestionRequest,
+    db: Session = Depends(get_db)
+):
+    # Get embedding for the complaint text
+    complaint_vector = get_embedding(request.complaint_text)
+    
+    # Perform vector search to find top 3 matching staff members
+    # Using the <-> operator for L2 distance in pgvector
+    # Only select the columns that exist in the database
+    top_staff = (
+        db.query(models.Staff.id, models.Staff.name, models.Staff.role)
+        .order_by(models.Staff.skills_vector.l2_distance(complaint_vector))
+        .limit(3)
+        .all()
+    )
+    
+    # Create a formatted prompt for the LLM
+    staff_info = "\n".join([
+        f"- {staff.name} ({staff.role})"
+        for staff in top_staff
+    ])
+    
+    prompt = f"""Given the following pet complaint: "{request.complaint_text}"
+
+We have identified the following staff members as potential matches based on their skills:
+{staff_info}
+
+Please explain why these staff members are a good match for this complaint and suggest some potential appointment times for the next week. Be concise and friendly."""
+    
+    # Get generative recommendation from Ollama
+    generative_recommendation = await get_ollama_recommendation(prompt)
+    
+    # Return the response
+    return schemas.SuggestionResponse(
+        generative_recommendation=generative_recommendation,
+        suggested_staff=[
+            schemas.SuggestedStaff(
+                id=staff.id,
+                name=staff.name,
+                role=staff.role
+            )
+            for staff in top_staff
+        ]
     )

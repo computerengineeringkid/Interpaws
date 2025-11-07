@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 from pydantic import BaseModel
 
 
@@ -20,3 +21,21 @@ class Booking(BookingBase):
 
     class Config:
         from_attributes = True
+
+
+class SuggestionRequest(BaseModel):
+    complaint_text: str
+
+
+class SuggestedStaff(BaseModel):
+    id: int
+    name: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
+class SuggestionResponse(BaseModel):
+    generative_recommendation: str
+    suggested_staff: List[SuggestedStaff]

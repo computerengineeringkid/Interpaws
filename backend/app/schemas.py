@@ -9,10 +9,11 @@ class BookingBase(BaseModel):
     client_id: int
     pet_id: int
     staff_id: int
+    complaint_reason: Optional[str] = None
 
 
 class BookingCreate(BookingBase):
-    pass
+    complaint_reason: Optional[str] = None
 
 
 class BookingUpdate(BaseModel):
@@ -24,6 +25,23 @@ class BookingUpdate(BaseModel):
 class Booking(BookingBase):
     id: int
     status: str
+
+    class Config:
+        from_attributes = True
+
+
+# Preferences Schemas
+class PreferencesBase(BaseModel):
+    details: str
+
+
+class PreferencesCreate(PreferencesBase):
+    pass
+
+
+class Preferences(PreferencesBase):
+    id: int
+    client_id: int
 
     class Config:
         from_attributes = True

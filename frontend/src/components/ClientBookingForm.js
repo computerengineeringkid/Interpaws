@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
+import { addMinutes } from "date-fns";
 
 export default function ClientBookingForm({ complaint, setComplaint }) {
   const [petName, setPetName] = useState("");
@@ -28,6 +29,44 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState(null);
+
+  const handleBookNow = async (staffId) => {
+    if (!selectedDate) {
+      alert("Please select a date first.");
+      return;
+    }
+
+    try {
+      const start = selectedDate;
+      const end = addMinutes(start, 30);
+
+      const payload = {
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        client_id: 1, // mock for now
+        pet_id: 1, // mock for now
+        staff_id: staffId,
+        complaint_reason: complaint || null,
+      };
+
+      const res = await fetch("/api/bookings/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        alert("Booking created successfully!");
+      } else {
+        const text = await res.text();
+        console.error("Booking failed:", text);
+        alert("Failed to create booking. Please try another time.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An unexpected error occurred.");
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -130,9 +169,14 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
               <h3 className="font-semibold text-lg mb-2">Suggested Staff:</h3>
               <ul className="space-y-2">
                 {suggestions.suggested_staff.map((staff) => (
-                  <li key={staff.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                    <span className="font-medium">{staff.name}</span>
-                    <span className="text-gray-600">({staff.role})</span>
+                  <li key={staff.id} className="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded">
+                    <div>
+                      <span className="font-medium">{staff.name}</span>{" "}
+                      <span className="text-gray-600">({staff.role})</span>
+                    </div>
+                    <Button size="sm" onClick={() => handleBookNow(staff.id)}>
+                      Book Now
+                    </Button>
                   </li>
                 ))}
               </ul>

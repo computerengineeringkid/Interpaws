@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ClientBookingForm from "@/components/ClientBookingForm";
 import AIChat from "@/components/AIChat";
+import ClientPreferences from "@/components/ClientPreferences";
 
 export default function Home() {
   const [complaint, setComplaint] = useState("");
@@ -14,6 +15,7 @@ export default function Home() {
         <div className="max-w-xl space-y-8">
           <ClientBookingForm complaint={complaint} setComplaint={setComplaint} />
           <AIChat complaint={complaint} />
+          <ClientPreferences />
         </div>
       </main>
     </div>

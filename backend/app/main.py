@@ -7,7 +7,7 @@ from sqlalchemy import Date, cast, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .schemas import ChatRequest, ChatResponse, SmartChatRequest
+from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCreate, BookingUpdate
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
@@ -162,3 +162,52 @@ Please answer the user's question using the context provided. Be helpful, friend
     
     result_text = await get_ollama_recommendation(enhanced_prompt)
     return ChatResponse(response=result_text)
+
+
+# Staff Endpoints
+@app.post("/staff/", response_model=schemas.Staff, tags=["Staff"])
+def create_staff(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
+    """Create a new staff member."""
+    db_staff = models.Staff(name=staff.name, role=staff.role)
+    db.add(db_staff)
+    db.commit()
+    db.refresh(db_staff)
+    return db_staff
+
+
+@app.get("/staff/", response_model=List[schemas.Staff], tags=["Staff"])
+def get_all_staff(db: Session = Depends(get_db)):
+    """Get all staff members."""
+    return db.query(models.Staff).all()
+
+
+# Booking Management Endpoints
+@app.put("/bookings/{booking_id}", response_model=schemas.Booking, tags=["Bookings"])
+def update_booking(booking_id: int, booking_update: schemas.BookingUpdate, db: Session = Depends(get_db)):
+    """Update an existing booking."""
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Update only the fields that are provided
+    update_data = booking_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_booking, field, value)
+    
+    db.commit()
+    db.refresh(db_booking)
+    return db_booking
+
+
+@app.delete("/bookings/{booking_id}", response_model=dict, tags=["Bookings"])
+def delete_booking(booking_id: int, db: Session = Depends(get_db)):
+    """Delete a booking."""
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    db.delete(db_booking)
+    db.commit()
+    return {"ok": True}

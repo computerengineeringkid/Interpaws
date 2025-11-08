@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -15,9 +15,31 @@ class BookingCreate(BookingBase):
     pass
 
 
+class BookingUpdate(BaseModel):
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    status: Optional[str] = None
+
+
 class Booking(BookingBase):
     id: int
     status: str
+
+    class Config:
+        from_attributes = True
+
+
+class StaffBase(BaseModel):
+    name: str
+    role: str
+
+
+class StaffCreate(StaffBase):
+    pass
+
+
+class Staff(StaffBase):
+    id: int
 
     class Config:
         from_attributes = True

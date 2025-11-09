@@ -1,8 +1,37 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
+# Client Schemas
+class ClientBase(BaseModel):
+    name: str
+    email: EmailStr
+    clinic_id: Optional[int] = None
+
+
+class ClientCreate(ClientBase):
+    password: str
+
+
+class Client(ClientBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Token Schemas
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+
+# Booking Schemas
 class BookingBase(BaseModel):
     start_time: datetime
     end_time: datetime
@@ -74,3 +103,20 @@ class ChatResponse(BaseModel):
 class SmartChatRequest(BaseModel):
     prompt: str
     complaint_text: str
+
+
+# Preferences Schemas
+class PreferencesBase(BaseModel):
+    details: str
+
+
+class PreferencesCreate(PreferencesBase):
+    pass
+
+
+class Preferences(PreferencesBase):
+    id: int
+    client_id: int
+
+    class Config:
+        from_attributes = True

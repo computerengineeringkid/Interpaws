@@ -1,8 +1,9 @@
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import Date, cast, text
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,13 @@ from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCr
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
+from .auth import (
+    get_password_hash,
+    authenticate_client,
+    create_access_token,
+    get_current_user,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
 app = FastAPI()
 
@@ -54,6 +62,60 @@ def get_db():
         db.close()
 
 
+# ============================================
+# Authentication Endpoints
+# ============================================
+
+@app.post("/clients/", response_model=schemas.Client, tags=["Authentication"])
+def register_client(client: schemas.ClientCreate, db: Session = Depends(get_db)):
+    """Register a new client account."""
+    # Check if email already exists
+    db_client = db.query(models.Client).filter(models.Client.email == client.email).first()
+    if db_client:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create new client with hashed password
+    hashed_password = get_password_hash(client.password)
+    db_client = models.Client(
+        name=client.name,
+        email=client.email,
+        hashed_password=hashed_password,
+        clinic_id=client.clinic_id
+    )
+    db.add(db_client)
+    db.commit()
+    db.refresh(db_client)
+    return db_client
+
+
+@app.post("/token", response_model=schemas.Token, tags=["Authentication"])
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Login endpoint to get an access token."""
+    client = authenticate_client(db, form_data.username, form_data.password)
+    if not client:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": client.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/clients/me", response_model=schemas.Client, tags=["Authentication"])
+async def get_current_client(current_user: models.Client = Depends(get_current_user)):
+    """Get the currently authenticated client's details."""
+    return current_user
+
+
+# ============================================
+# Booking Endpoints
+# ============================================
+
 @app.post("/bookings/", response_model=schemas.Booking)
 async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)):
     # Check if the staff member is available during the requested time
@@ -77,6 +139,20 @@ async def get_bookings_for_date(date: date, db: Session = Depends(get_db)):
     return (
         db.query(models.Booking)
         .filter(cast(models.Booking.start_time, Date) == date)
+        .all()
+    )
+
+
+@app.get("/bookings/me", response_model=List[schemas.Booking], tags=["Bookings"])
+async def get_my_bookings(
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all bookings for the currently authenticated client."""
+    return (
+        db.query(models.Booking)
+        .filter(models.Booking.client_id == current_user.id)
+        .order_by(models.Booking.start_time.desc())
         .all()
     )
 
@@ -211,3 +287,42 @@ def delete_booking(booking_id: int, db: Session = Depends(get_db)):
     db.delete(db_booking)
     db.commit()
     return {"ok": True}
+
+
+# ============================================
+# Preferences Endpoints
+# ============================================
+
+@app.post("/preferences/me", response_model=schemas.Preferences, tags=["Preferences"])
+async def create_my_preferences(
+    preferences: schemas.PreferencesCreate,
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create or update preferences for the currently authenticated client."""
+    # Generate embedding for preferences
+    details_vector = get_embedding(preferences.details)
+    
+    # Create new preference record
+    db_preferences = models.Preferences(
+        details=preferences.details,
+        client_id=current_user.id,
+        details_vector=details_vector
+    )
+    db.add(db_preferences)
+    db.commit()
+    db.refresh(db_preferences)
+    return db_preferences
+
+
+@app.get("/preferences/me", response_model=List[schemas.Preferences], tags=["Preferences"])
+async def get_my_preferences(
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all preferences for the currently authenticated client."""
+    return (
+        db.query(models.Preferences)
+        .filter(models.Preferences.client_id == current_user.id)
+        .all()
+    )

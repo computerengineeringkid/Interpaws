@@ -4,3 +4,6 @@ psycopg2-binary
 pgvector
 sentence-transformers
 ollama
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart

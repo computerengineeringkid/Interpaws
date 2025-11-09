@@ -64,23 +64,8 @@ async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(g
             status_code=400,
             detail="Staff member is not available during this time slot."
         )
-
-    # Prepare booking payload
-    payload = booking.model_dump()
-
-    # Generate complaint embedding if provided
-    complaint_reason = payload.get("complaint_reason")
-    complaint_vector = None
-    if complaint_reason:
-        complaint_vector = get_embedding(complaint_reason)
-
-    db_booking = models.Booking(**payload)  # type: ignore[arg-type]
-
-    # Persist complaint text and vector if available
-    if complaint_reason:
-        db_booking.complaint_reason = complaint_reason
-        db_booking.complaint_vector = complaint_vector
-
+    
+    db_booking = models.Booking(**booking.model_dump())  # type: ignore[arg-type]
     db.add(db_booking)
     db.commit()
     db.refresh(db_booking)
@@ -226,36 +211,3 @@ def delete_booking(booking_id: int, db: Session = Depends(get_db)):
     db.delete(db_booking)
     db.commit()
     return {"ok": True}
-
-
-# Client-specific bookings
-@app.get("/bookings/client/{client_id}", response_model=List[schemas.Booking])
-def get_client_bookings(client_id: int, db: Session = Depends(get_db)):
-    """Return all bookings for a given client."""
-    return (
-        db.query(models.Booking)
-        .filter(models.Booking.client_id == client_id)
-        .order_by(models.Booking.start_time.desc())
-        .all()
-    )
-
-
-# Preferences Endpoints
-@app.post("/preferences/client/{client_id}", response_model=schemas.Preferences)
-def create_client_preferences(
-    client_id: int,
-    preference: schemas.PreferencesCreate,
-    db: Session = Depends(get_db),
-):
-    """Create client preferences with vector embedding for details text."""
-    details_vector = get_embedding(preference.details) if preference.details else None
-
-    db_pref = models.Preferences(
-        client_id=client_id,
-        details=preference.details,
-        details_vector=details_vector,
-    )
-    db.add(db_pref)
-    db.commit()
-    db.refresh(db_pref)
-    return db_pref

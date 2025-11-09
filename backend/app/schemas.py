@@ -120,3 +120,20 @@ class Preferences(PreferencesBase):
 
     class Config:
         from_attributes = True
+
+
+# AIFeedbackLog Schemas
+class AIFeedbackLogBase(BaseModel):
+    booking_id: int
+    staff_id: int
+
+
+class AIFeedbackLogCreate(AIFeedbackLogBase):
+    pass
+
+
+class AIFeedbackLog(AIFeedbackLogBase):
+    id: int
+
+    class Config:
+        from_attributes = True

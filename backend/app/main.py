@@ -24,9 +24,10 @@ app = FastAPI()
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Ensure DB is reachable and create tables with simple retries.
+    """Ensure DB is reachable and create vector extension with simple retries.
 
     This avoids import-time connection attempts and tolerates slow DB startup.
+    Tables are now managed by Alembic migrations, not by create_all.
     """
     max_attempts = 10
     delay_seconds = 2
@@ -39,8 +40,7 @@ def on_startup() -> None:
                 # Create the vector extension
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
                 conn.commit()
-            # Create tables once connection succeeds
-            models.Base.metadata.create_all(bind=engine)
+            # Tables are now managed by Alembic migrations
             break
         except Exception:  # noqa: BLE001 - broad to handle transient DB errors
             if attempt == max_attempts:
@@ -326,3 +326,43 @@ async def get_my_preferences(
         .filter(models.Preferences.client_id == current_user.id)
         .all()
     )
+
+
+# ============================================
+# AI Feedback Loop Endpoints
+# ============================================
+
+@app.post("/log-feedback/", response_model=schemas.AIFeedbackLog, tags=["AI Feedback"])
+async def log_ai_feedback(
+    booking_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Log successful booking match for AI feedback loop.
+    
+    This endpoint records when a booking is successfully completed,
+    capturing the complaint vector and staff skills vector for future AI training.
+    """
+    # Fetch the booking
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Fetch the staff member
+    staff = db.query(models.Staff).filter(models.Staff.id == booking.staff_id).first()
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    
+    # Create feedback log entry
+    feedback_log = models.AIFeedbackLog(
+        booking_id=booking.id,
+        staff_id=staff.id,
+        client_complaint_vector=booking.complaint_vector,
+        staff_skills_vector=staff.skills_vector
+    )
+    
+    db.add(feedback_log)
+    db.commit()
+    db.refresh(feedback_log)
+    
+    return feedback_log

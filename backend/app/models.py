@@ -60,3 +60,13 @@ class Preferences(Base):
     details = Column(Text)
     client_id = Column(Integer, ForeignKey("clients.id"))
     details_vector = Column(Vector(384), nullable=True)
+
+
+class AIFeedbackLog(Base):
+    __tablename__ = "ai_feedback_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("bookings.id"))
+    staff_id = Column(Integer, ForeignKey("staff.id"))
+    client_complaint_vector = Column(Vector(384), nullable=True)
+    staff_skills_vector = Column(Vector(384), nullable=True)

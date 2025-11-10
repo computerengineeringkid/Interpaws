@@ -1,6 +1,7 @@
 # Quick Testing Guide - Admin VPMS
 
 ## Prerequisites
+
 ```bash
 cd /Users/amaribullard/Documents/GitHub/Interpaws
 docker-compose up --build
@@ -33,12 +34,14 @@ curl -X POST "http://localhost:8000/staff/login" \
 ## 3. Test Staff Management
 
 ### List All Staff (Protected)
+
 ```bash
 curl -X GET "http://localhost:8000/staff/" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
 ### Update Staff
+
 ```bash
 curl -X PUT "http://localhost:8000/staff/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
@@ -49,6 +52,7 @@ curl -X PUT "http://localhost:8000/staff/1" \
 ```
 
 ### Delete Staff
+
 ```bash
 curl -X DELETE "http://localhost:8000/staff/2" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
@@ -57,6 +61,7 @@ curl -X DELETE "http://localhost:8000/staff/2" \
 ## 4. Test Surgery Management
 
 ### Create Surgery
+
 ```bash
 curl -X POST "http://localhost:8000/surgeries/" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
@@ -73,6 +78,7 @@ curl -X POST "http://localhost:8000/surgeries/" \
 ```
 
 ### List Surgeries (with filters)
+
 ```bash
 # All surgeries
 curl -X GET "http://localhost:8000/surgeries/" \
@@ -88,6 +94,7 @@ curl -X GET "http://localhost:8000/surgeries/?date=2025-11-15" \
 ```
 
 ### Update Surgery
+
 ```bash
 curl -X PUT "http://localhost:8000/surgeries/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
@@ -98,6 +105,7 @@ curl -X PUT "http://localhost:8000/surgeries/1" \
 ```
 
 ### Delete Surgery
+
 ```bash
 curl -X DELETE "http://localhost:8000/surgeries/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
@@ -106,6 +114,7 @@ curl -X DELETE "http://localhost:8000/surgeries/1" \
 ## 5. Test Medication Management
 
 ### Add Medication
+
 ```bash
 curl -X POST "http://localhost:8000/medications/" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
@@ -119,12 +128,14 @@ curl -X POST "http://localhost:8000/medications/" \
 ```
 
 ### List All Medications
+
 ```bash
 curl -X GET "http://localhost:8000/medications/" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
 ### Update Medication Stock
+
 ```bash
 curl -X PUT "http://localhost:8000/medications/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
@@ -135,6 +146,7 @@ curl -X PUT "http://localhost:8000/medications/1" \
 ```
 
 ### Delete Medication
+
 ```bash
 curl -X DELETE "http://localhost:8000/medications/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
@@ -143,6 +155,7 @@ curl -X DELETE "http://localhost:8000/medications/1" \
 ## 6. Test Protected Booking Endpoints
 
 ### Update Booking (Admin Only)
+
 ```bash
 curl -X PUT "http://localhost:8000/bookings/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
@@ -153,6 +166,7 @@ curl -X PUT "http://localhost:8000/bookings/1" \
 ```
 
 ### Delete Booking (Admin Only)
+
 ```bash
 curl -X DELETE "http://localhost:8000/bookings/1" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
@@ -161,6 +175,7 @@ curl -X DELETE "http://localhost:8000/bookings/1" \
 ## Testing Authentication Security
 
 ### Test Unauthorized Access (Should Fail)
+
 ```bash
 # Try to access admin endpoint without token
 curl -X GET "http://localhost:8000/staff/"
@@ -181,12 +196,14 @@ curl -X GET "http://localhost:8000/staff/" \
 ## API Documentation
 
 Once the server is running, visit:
+
 - **Swagger UI:** http://localhost:8000/docs
 - **ReDoc:** http://localhost:8000/redoc
 
 ## Environment Variables
 
 Make sure these are set in your `.env` file or docker-compose.yml:
+
 - `DATABASE_URL`: PostgreSQL connection string
 - `SECRET_KEY`: JWT secret key (change in production!)
 

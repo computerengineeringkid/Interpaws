@@ -1,10 +1,19 @@
 "use client";
 
 import React, { useState } from "react";
+import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
 
 export default function AdminDashboardPage() {
+  return (
+    <AdminProtectedRoute>
+      <AdminDashboardContent />
+    </AdminProtectedRoute>
+  );
+}
+
+function AdminDashboardContent() {
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   return (

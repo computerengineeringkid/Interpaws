@@ -2,23 +2,31 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns/format";
+import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 export default function AdminBookingList({ selectedDate }) {
+  const { token } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchBookings = useCallback(async () => {
+    if (!token) return;
+    
     setIsLoading(true);
     setError(null);
 
     try {
       const dateString = format(selectedDate, 'yyyy-MM-dd');
-      const response = await fetch(`/api/bookings/${dateString}`);
+      const response = await fetch(`http://localhost:8000/bookings/${dateString}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       
       if (!response.ok) {
         throw new Error('Failed to fetch bookings');
@@ -32,11 +40,11 @@ export default function AdminBookingList({ selectedDate }) {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, token]);
 
   useEffect(() => {
     fetchBookings();
-  }, [selectedDate, fetchBookings]);
+  }, [fetchBookings]);
 
   const handleDeleteBooking = async (bookingId) => {
     if (!window.confirm('Are you sure you want to delete this booking?')) {
@@ -44,8 +52,11 @@ export default function AdminBookingList({ selectedDate }) {
     }
 
     try {
-      const response = await fetch(`/api/bookings/${bookingId}`, {
+      const response = await fetch(`http://localhost:8000/bookings/${bookingId}`, {
         method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       if (!response.ok) {
@@ -62,10 +73,11 @@ export default function AdminBookingList({ selectedDate }) {
 
   const handleUpdateStatus = async (bookingId, newStatus) => {
     try {
-      const response = await fetch(`/api/bookings/${bookingId}`, {
+      const response = await fetch(`http://localhost:8000/bookings/${bookingId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: newStatus }),
       });

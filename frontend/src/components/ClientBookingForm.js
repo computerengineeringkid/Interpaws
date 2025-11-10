@@ -28,11 +28,13 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState(null);
+  const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setSuggestions(null);
+    setError(null);
     
     try {
       const requestBody = {
@@ -47,8 +49,15 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
         body: JSON.stringify(requestBody),
       });
       
+      if (!response.ok) {
+        throw new Error('Failed to get AI suggestions');
+      }
+      
       const result = await response.json();
       setSuggestions(result);
+    } catch (err) {
+      setError(err.message || 'An error occurred while getting suggestions');
+      console.error('Error getting suggestions:', err);
     } finally {
       setIsLoading(false);
     }
@@ -115,6 +124,14 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
       {isLoading && (
         <CardContent>
           <p className="text-center text-gray-600">Loading AI suggestions...</p>
+        </CardContent>
+      )}
+      
+      {error && !isLoading && (
+        <CardContent className="border-t pt-4">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
         </CardContent>
       )}
       

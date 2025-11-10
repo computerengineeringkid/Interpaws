@@ -64,11 +64,20 @@ class StaffBase(BaseModel):
 
 
 class StaffCreate(StaffBase):
-    pass
+    email: EmailStr
+    password: str
+    skills_description: Optional[str] = None
+
+
+class StaffUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    skills_description: Optional[str] = None
 
 
 class Staff(StaffBase):
     id: int
+    email: EmailStr
 
     class Config:
         from_attributes = True
@@ -133,6 +142,64 @@ class AIFeedbackLogCreate(AIFeedbackLogBase):
 
 
 class AIFeedbackLog(AIFeedbackLogBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Surgery Schemas
+class SurgeryBase(BaseModel):
+    pet_id: int
+    staff_id: int
+    surgery_type: str
+    start_time: datetime
+    end_time: datetime
+    notes: Optional[str] = None
+    status: str = "Scheduled"
+
+
+class SurgeryCreate(SurgeryBase):
+    pass
+
+
+class SurgeryUpdate(BaseModel):
+    pet_id: Optional[int] = None
+    staff_id: Optional[int] = None
+    surgery_type: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+
+
+class Surgery(SurgeryBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Medication Schemas
+class MedicationBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    stock_quantity: int = 0
+    unit: str
+
+
+class MedicationCreate(MedicationBase):
+    pass
+
+
+class MedicationUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    stock_quantity: Optional[int] = None
+    unit: Optional[str] = None
+
+
+class Medication(MedicationBase):
     id: int
 
     class Config:

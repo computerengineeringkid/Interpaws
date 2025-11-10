@@ -1,6 +1,6 @@
 import time
 from datetime import date, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
@@ -8,15 +8,17 @@ from sqlalchemy import Date, cast, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCreate, BookingUpdate
+from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCreate, StaffUpdate, BookingUpdate
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
 from .auth import (
     get_password_hash,
     authenticate_client,
+    authenticate_staff,
     create_access_token,
     get_current_user,
+    get_current_admin_user,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
@@ -102,6 +104,24 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": client.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/staff/login", response_model=schemas.Token, tags=["Authentication"])
+def staff_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Staff login endpoint to get an access token for admin users."""
+    staff = authenticate_staff(db, form_data.username, form_data.password)
+    if not staff:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": staff.email}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -244,7 +264,26 @@ Please answer the user's question using the context provided. Be helpful, friend
 @app.post("/staff/", response_model=schemas.Staff, tags=["Staff"])
 def create_staff(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
     """Create a new staff member."""
-    db_staff = models.Staff(name=staff.name, role=staff.role)
+    # Check if email already exists
+    db_staff = db.query(models.Staff).filter(models.Staff.email == staff.email).first()
+    if db_staff:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Generate embedding for skills_description if provided
+    skills_vector = None
+    if staff.skills_description:
+        skills_vector = get_embedding(staff.skills_description)
+    
+    # Create new staff with hashed password
+    hashed_password = get_password_hash(staff.password)
+    db_staff = models.Staff(
+        name=staff.name,
+        email=staff.email,
+        hashed_password=hashed_password,
+        role=staff.role,
+        skills_description=staff.skills_description,
+        skills_vector=skills_vector
+    )
     db.add(db_staff)
     db.commit()
     db.refresh(db_staff)
@@ -252,15 +291,68 @@ def create_staff(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/staff/", response_model=List[schemas.Staff], tags=["Staff"])
-def get_all_staff(db: Session = Depends(get_db)):
-    """Get all staff members."""
+def get_all_staff(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all staff members. Admin only."""
     return db.query(models.Staff).all()
+
+
+@app.put("/staff/{staff_id}", response_model=schemas.Staff, tags=["Staff"])
+def update_staff(
+    staff_id: int,
+    staff_update: schemas.StaffUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update a staff member. Admin only."""
+    db_staff = db.query(models.Staff).filter(models.Staff.id == staff_id).first()
+    
+    if not db_staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    
+    # Update only the fields that are provided
+    update_data = staff_update.model_dump(exclude_unset=True)
+    
+    # If skills_description is being updated, regenerate the embedding
+    if "skills_description" in update_data and update_data["skills_description"] is not None:
+        db_staff.skills_vector = get_embedding(update_data["skills_description"])
+    
+    for field, value in update_data.items():
+        setattr(db_staff, field, value)
+    
+    db.commit()
+    db.refresh(db_staff)
+    return db_staff
+
+
+@app.delete("/staff/{staff_id}", response_model=dict, tags=["Staff"])
+def delete_staff(
+    staff_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a staff member. Admin only."""
+    db_staff = db.query(models.Staff).filter(models.Staff.id == staff_id).first()
+    
+    if not db_staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    
+    db.delete(db_staff)
+    db.commit()
+    return {"ok": True}
 
 
 # Booking Management Endpoints
 @app.put("/bookings/{booking_id}", response_model=schemas.Booking, tags=["Bookings"])
-def update_booking(booking_id: int, booking_update: schemas.BookingUpdate, db: Session = Depends(get_db)):
-    """Update an existing booking."""
+def update_booking(
+    booking_id: int,
+    booking_update: schemas.BookingUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update an existing booking. Admin only."""
     db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
     
     if not db_booking:
@@ -277,8 +369,12 @@ def update_booking(booking_id: int, booking_update: schemas.BookingUpdate, db: S
 
 
 @app.delete("/bookings/{booking_id}", response_model=dict, tags=["Bookings"])
-def delete_booking(booking_id: int, db: Session = Depends(get_db)):
-    """Delete a booking."""
+def delete_booking(
+    booking_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a booking. Admin only."""
     db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
     
     if not db_booking:
@@ -366,3 +462,175 @@ async def log_ai_feedback(
     db.refresh(feedback_log)
     
     return feedback_log
+
+
+# ============================================
+# Surgery Endpoints
+# ============================================
+
+@app.post("/surgeries/", response_model=schemas.Surgery, tags=["Surgeries"])
+def create_surgery(
+    surgery: schemas.SurgeryCreate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new surgery. Admin only."""
+    db_surgery = models.Surgery(**surgery.model_dump())
+    db.add(db_surgery)
+    db.commit()
+    db.refresh(db_surgery)
+    return db_surgery
+
+
+@app.get("/surgeries/", response_model=List[schemas.Surgery], tags=["Surgeries"])
+def get_surgeries(
+    date: Optional[date] = None,
+    staff_id: Optional[int] = None,
+    pet_id: Optional[int] = None,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all surgeries with optional filters. Admin only."""
+    query = db.query(models.Surgery)
+    
+    if date:
+        query = query.filter(cast(models.Surgery.start_time, Date) == date)
+    if staff_id:
+        query = query.filter(models.Surgery.staff_id == staff_id)
+    if pet_id:
+        query = query.filter(models.Surgery.pet_id == pet_id)
+    
+    return query.all()
+
+
+@app.get("/surgeries/{surgery_id}", response_model=schemas.Surgery, tags=["Surgeries"])
+def get_surgery(
+    surgery_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific surgery by ID. Admin only."""
+    surgery = db.query(models.Surgery).filter(models.Surgery.id == surgery_id).first()
+    if not surgery:
+        raise HTTPException(status_code=404, detail="Surgery not found")
+    return surgery
+
+
+@app.put("/surgeries/{surgery_id}", response_model=schemas.Surgery, tags=["Surgeries"])
+def update_surgery(
+    surgery_id: int,
+    surgery_update: schemas.SurgeryUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update a surgery. Admin only."""
+    db_surgery = db.query(models.Surgery).filter(models.Surgery.id == surgery_id).first()
+    
+    if not db_surgery:
+        raise HTTPException(status_code=404, detail="Surgery not found")
+    
+    # Update only the fields that are provided
+    update_data = surgery_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_surgery, field, value)
+    
+    db.commit()
+    db.refresh(db_surgery)
+    return db_surgery
+
+
+@app.delete("/surgeries/{surgery_id}", response_model=dict, tags=["Surgeries"])
+def delete_surgery(
+    surgery_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a surgery. Admin only."""
+    db_surgery = db.query(models.Surgery).filter(models.Surgery.id == surgery_id).first()
+    
+    if not db_surgery:
+        raise HTTPException(status_code=404, detail="Surgery not found")
+    
+    db.delete(db_surgery)
+    db.commit()
+    return {"ok": True}
+
+
+# ============================================
+# Medication Endpoints
+# ============================================
+
+@app.post("/medications/", response_model=schemas.Medication, tags=["Medications"])
+def create_medication(
+    medication: schemas.MedicationCreate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new medication. Admin only."""
+    db_medication = models.Medication(**medication.model_dump())
+    db.add(db_medication)
+    db.commit()
+    db.refresh(db_medication)
+    return db_medication
+
+
+@app.get("/medications/", response_model=List[schemas.Medication], tags=["Medications"])
+def get_medications(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all medications. Admin only."""
+    return db.query(models.Medication).all()
+
+
+@app.get("/medications/{medication_id}", response_model=schemas.Medication, tags=["Medications"])
+def get_medication(
+    medication_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific medication by ID. Admin only."""
+    medication = db.query(models.Medication).filter(models.Medication.id == medication_id).first()
+    if not medication:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    return medication
+
+
+@app.put("/medications/{medication_id}", response_model=schemas.Medication, tags=["Medications"])
+def update_medication(
+    medication_id: int,
+    medication_update: schemas.MedicationUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update a medication. Admin only."""
+    db_medication = db.query(models.Medication).filter(models.Medication.id == medication_id).first()
+    
+    if not db_medication:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    
+    # Update only the fields that are provided
+    update_data = medication_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_medication, field, value)
+    
+    db.commit()
+    db.refresh(db_medication)
+    return db_medication
+
+
+@app.delete("/medications/{medication_id}", response_model=dict, tags=["Medications"])
+def delete_medication(
+    medication_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a medication. Admin only."""
+    db_medication = db.query(models.Medication).filter(models.Medication.id == medication_id).first()
+    
+    if not db_medication:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    
+    db.delete(db_medication)
+    db.commit()
+    return {"ok": True}

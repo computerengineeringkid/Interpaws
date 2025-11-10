@@ -14,6 +14,8 @@ class Staff(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
+    email = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
     role = Column(String, index=True) # e.g., "Veterinarian", "Technician"
     skills_description = Column(Text, nullable=True)
     skills_vector = Column(Vector(384), nullable=True)
@@ -70,3 +72,26 @@ class AIFeedbackLog(Base):
     staff_id = Column(Integer, ForeignKey("staff.id"))
     client_complaint_vector = Column(Vector(384), nullable=True)
     staff_skills_vector = Column(Vector(384), nullable=True)
+
+
+class Surgery(Base):
+    __tablename__ = "surgeries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pet_id = Column(Integer, ForeignKey("pets.id"))
+    staff_id = Column(Integer, ForeignKey("staff.id"))  # Primary surgeon
+    surgery_type = Column(String)  # e.g., "Spay", "Orthopedic"
+    notes = Column(Text, nullable=True)
+    start_time = Column(DateTime)
+    end_time = Column(DateTime)
+    status = Column(String, index=True)  # e.g., "Scheduled", "In-Progress", "Completed"
+
+
+class Medication(Base):
+    __tablename__ = "medications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    description = Column(Text, nullable=True)
+    stock_quantity = Column(Integer, default=0)
+    unit = Column(String)  # e.g., "mg", "ml", "tablets"

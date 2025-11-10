@@ -65,6 +65,16 @@ def authenticate_client(db: Session, email: str, password: str) -> Optional[mode
     return client
 
 
+def authenticate_staff(db: Session, email: str, password: str) -> Optional[models.Staff]:
+    """Authenticate a staff member by email and password."""
+    staff = db.query(models.Staff).filter(models.Staff.email == email).first()
+    if not staff:
+        return None
+    if not verify_password(password, staff.hashed_password):
+        return None
+    return staff
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme), 
     db: Session = Depends(get_db)
@@ -88,3 +98,28 @@ async def get_current_user(
     if client is None:
         raise credentials_exception
     return client
+
+
+async def get_current_admin_user(
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+) -> models.Staff:
+    """Get the current authenticated admin (staff) user from JWT token."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = schemas.TokenData(email=email)
+    except JWTError:
+        raise credentials_exception
+    
+    staff = db.query(models.Staff).filter(models.Staff.email == token_data.email).first()
+    if staff is None:
+        raise credentials_exception
+    return staff

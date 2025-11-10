@@ -20,6 +20,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Ensure pgvector extension is available for vector columns
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
     # Create clinics table
     op.create_table('clinics',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -102,6 +105,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Optionally drop the extension if no longer needed
+    op.execute("DROP EXTENSION IF EXISTS vector")
+
     op.drop_index(op.f('ix_preferences_id'), table_name='preferences')
     op.drop_table('preferences')
     op.drop_index(op.f('ix_bookings_status'), table_name='bookings')

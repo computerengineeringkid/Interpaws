@@ -19,6 +19,10 @@ RUN python -m pip install --upgrade pip \
 # Assuming your FastAPI app lives in backend/app
 COPY app/ /code/app/
 
+# Copy Alembic configuration and migrations so `alembic upgrade head` works in the container
+COPY alembic.ini /code/
+COPY alembic/ /code/alembic/
+
 # Expose port
 EXPOSE 8000
 

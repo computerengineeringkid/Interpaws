@@ -35,7 +35,7 @@ export default function MyBookingsPage() {
 
   const fetchBookings = async () => {
     try {
-      const response = await fetch("http://localhost:8000/bookings/me", {
+      const response = await fetch("/api/bookings/me", {
         headers: {
           Authorization: `Bearer ${token}`,
         },

@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }) => {
       formData.append("username", email); // OAuth2 uses 'username' field
       formData.append("password", password);
 
-      const response = await fetch("http://localhost:8000/token", {
+      const response = await fetch("/api/token", {
         method: "POST",
         body: formData,
       });
@@ -47,7 +47,7 @@ export const AuthProvider = ({ children }) => {
       const accessToken = data.access_token;
 
       // Get user details
-      const userResponse = await fetch("http://localhost:8000/clients/me", {
+      const userResponse = await fetch("/api/clients/me", {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
@@ -81,7 +81,7 @@ export const AuthProvider = ({ children }) => {
       formData.append("username", email);
       formData.append("password", password);
 
-      const response = await fetch("http://localhost:8000/staff/login", {
+      const response = await fetch("/api/staff/login", {
         method: "POST",
         body: formData,
       });
@@ -115,7 +115,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (name, email, password, clinicId = null) => {
     try {
-      const response = await fetch("http://localhost:8000/clients/", {
+      const response = await fetch("/api/clients/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

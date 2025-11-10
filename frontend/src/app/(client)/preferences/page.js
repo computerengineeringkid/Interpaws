@@ -32,7 +32,7 @@ export default function PreferencesPage() {
 
   const fetchPreferences = async () => {
     try {
-      const response = await fetch("http://localhost:8000/preferences/me", {
+      const response = await fetch("/api/preferences/me", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -62,7 +62,7 @@ export default function PreferencesPage() {
     setSubmitting(true);
 
     try {
-      const response = await fetch("http://localhost:8000/preferences/me", {
+      const response = await fetch("/api/preferences/me", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

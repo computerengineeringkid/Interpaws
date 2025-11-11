@@ -437,7 +437,7 @@ async def get_my_preferences(
 @app.post("/log-feedback/", response_model=schemas.AIFeedbackLog, tags=["AI Feedback"])
 async def log_ai_feedback(
     booking_id: int,
-    current_user: models.Client = Depends(get_current_user),
+    current_admin: models.Staff = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """

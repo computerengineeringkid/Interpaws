@@ -147,9 +147,10 @@ curl -X POST "http://localhost:8000/staff/" \
 
 4. **Access the application:**
    - **Client Portal:** http://localhost:3000
-  - **Admin Login:** http://localhost:3000/admin/admin-login
-  - **Admin Dashboard:** http://localhost:3000/admin/dashboard
-   - **API Docs:** http://localhost:8000/docs
+
+- **Admin Login:** http://localhost:3000/admin/admin-login
+- **Admin Dashboard:** http://localhost:3000/admin/dashboard
+- **API Docs:** http://localhost:8000/docs
 
 For detailed setup instructions, see [QUICK_START.md](QUICK_START.md)
 

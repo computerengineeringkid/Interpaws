@@ -90,6 +90,18 @@ export default function AdminBookingList({ selectedDate }) {
       setBookings(prev => prev.map(b => 
         b.id === bookingId ? { ...b, status: newStatus } : b
       ));
+
+      // If marking as completed, log AI feedback
+      if (newStatus === 'completed') {
+        fetch(`/api/log-feedback/?booking_id=${bookingId}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(err => {
+          console.error('Failed to log AI feedback:', err);
+        });
+      }
     } catch (err) {
       setError('Failed to update booking status.');
       console.error('Error updating booking status:', err);

@@ -38,7 +38,7 @@ function MedicationManagementContent() {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8000/medications/", {
+      const response = await fetch("/api/medications/", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -78,7 +78,7 @@ function MedicationManagementContent() {
           }
         });
 
-        const response = await fetch(`http://localhost:8000/medications/${editingMedication.id}`, {
+        const response = await fetch(`/api/medications/${editingMedication.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -99,7 +99,7 @@ function MedicationManagementContent() {
           stock_quantity: parseInt(formData.stock_quantity) || 0,
         };
 
-        const response = await fetch("http://localhost:8000/medications/", {
+        const response = await fetch("/api/medications/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -156,7 +156,7 @@ function MedicationManagementContent() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/medications/${medicationId}`, {
+      const response = await fetch(`/api/medications/${medicationId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

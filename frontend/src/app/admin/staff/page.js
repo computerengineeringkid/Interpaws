@@ -39,7 +39,7 @@ function StaffManagementContent() {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8000/staff/", {
+      const response = await fetch("/api/staff/", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -77,7 +77,7 @@ function StaffManagementContent() {
         if (formData.role) updatePayload.role = formData.role;
         if (formData.skills_description) updatePayload.skills_description = formData.skills_description;
 
-        const response = await fetch(`http://localhost:8000/staff/${editingStaff.id}`, {
+        const response = await fetch(`/api/staff/${editingStaff.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -93,10 +93,11 @@ function StaffManagementContent() {
         setEditingStaff(null);
       } else {
         // Create new staff
-        const response = await fetch("http://localhost:8000/staff/", {
+        const response = await fetch("/api/staff/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(formData),
         });
@@ -131,7 +132,7 @@ function StaffManagementContent() {
       email: staffMember.email,
       password: "", // Don't populate password
       role: staffMember.role,
-      skills_description: "",
+      skills_description: staffMember.skills_description || "",
     });
   };
 
@@ -152,7 +153,7 @@ function StaffManagementContent() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/staff/${staffId}`, {
+      const response = await fetch(`/api/staff/${staffId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

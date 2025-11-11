@@ -10,7 +10,7 @@ export default function AdminNav() {
   const { logout } = useAuth();
 
   const navItems = [
-    { href: "/admin", label: "Dashboard" },
+    { href: "/admin/dashboard", label: "Dashboard" },
     { href: "/admin/staff", label: "Staff" },
     { href: "/admin/surgeries", label: "Surgeries" },
     { href: "/admin/medications", label: "Medications" },

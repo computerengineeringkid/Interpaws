@@ -52,7 +52,7 @@ function SurgeryManagementContent() {
       if (filterStaffId) params.append("staff_id", filterStaffId);
       if (filterPetId) params.append("pet_id", filterPetId);
 
-      const url = `http://localhost:8000/surgeries/?${params.toString()}`;
+      const url = `/api/surgeries/?${params.toString()}`;
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -91,7 +91,7 @@ function SurgeryManagementContent() {
           if (formData[key]) updatePayload[key] = formData[key];
         });
 
-        const response = await fetch(`http://localhost:8000/surgeries/${editingSurgery.id}`, {
+        const response = await fetch(`/api/surgeries/${editingSurgery.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -113,7 +113,7 @@ function SurgeryManagementContent() {
           staff_id: parseInt(formData.staff_id),
         };
 
-        const response = await fetch("http://localhost:8000/surgeries/", {
+        const response = await fetch("/api/surgeries/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -179,7 +179,7 @@ function SurgeryManagementContent() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/surgeries/${surgeryId}`, {
+      const response = await fetch(`/api/surgeries/${surgeryId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

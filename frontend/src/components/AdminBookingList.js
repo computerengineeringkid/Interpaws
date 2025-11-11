@@ -22,7 +22,7 @@ export default function AdminBookingList({ selectedDate }) {
 
     try {
       const dateString = format(selectedDate, 'yyyy-MM-dd');
-      const response = await fetch(`http://localhost:8000/bookings/${dateString}`, {
+      const response = await fetch(`/api/bookings/${dateString}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -52,7 +52,7 @@ export default function AdminBookingList({ selectedDate }) {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/bookings/${bookingId}`, {
+      const response = await fetch(`/api/bookings/${bookingId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -73,7 +73,7 @@ export default function AdminBookingList({ selectedDate }) {
 
   const handleUpdateStatus = async (bookingId, newStatus) => {
     try {
-      const response = await fetch(`http://localhost:8000/bookings/${bookingId}`, {
+      const response = await fetch(`/api/bookings/${bookingId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

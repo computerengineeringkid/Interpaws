@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import {
   Card,
   CardHeader,
@@ -21,14 +21,21 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
+import { AuthContext } from "@/context/AuthContext";
 
 export default function ClientBookingForm({ complaint, setComplaint }) {
+  const { user, login } = useContext(AuthContext);
   const [petName, setPetName] = useState("");
+  const [petId, setPetId] = useState("");
   const [service, setService] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState(null);
   const [error, setError] = useState(null);
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [bookingError, setBookingError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -63,6 +70,44 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
     }
   };
 
+  const handleBookAppointment = async () => {
+    setBookingError(null);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      const requestBody = {
+        start_time: startTime,
+        end_time: endTime,
+        pet_id: parseInt(petId),
+        staff_id: parseInt(selectedStaff)
+      };
+      
+      const response = await fetch('/api/bookings/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to book appointment');
+      }
+      
+      const result = await response.json();
+      alert('Appointment booked successfully!');
+      // Optionally reset form or navigate
+    } catch (err) {
+      setBookingError(err.message || 'An error occurred while booking the appointment');
+      console.error('Error booking appointment:', err);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -78,6 +123,16 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
                 placeholder="Fido"
                 value={petName}
                 onChange={(e) => setPetName(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col space-y-1.5">
+              <Label htmlFor="petId">Pet ID</Label>
+              <Input
+                id="petId"
+                type="number"
+                placeholder="123"
+                value={petId}
+                onChange={(e) => setPetId(e.target.value)}
               />
             </div>
             <div className="flex flex-col space-y-1.5">
@@ -153,6 +208,58 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
                   </li>
                 ))}
               </ul>
+            </div>
+            
+            <div className="border-t pt-4">
+              <h3 className="font-semibold text-lg mb-2">Book Appointment</h3>
+              <div className="grid w-full items-center gap-4">
+                <div className="flex flex-col space-y-1.5">
+                  <Label htmlFor="selectedStaff">Select Staff</Label>
+                  <Select value={selectedStaff} onValueChange={setSelectedStaff}>
+                    <SelectTrigger id="selectedStaff">
+                      <SelectValue placeholder="Select a staff member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suggestions.suggested_staff.map((staff) => (
+                        <SelectItem key={staff.id} value={staff.id.toString()}>
+                          {staff.name} ({staff.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col space-y-1.5">
+                  <Label htmlFor="startTime">Start Time</Label>
+                  <Input
+                    id="startTime"
+                    type="datetime-local"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col space-y-1.5">
+                  <Label htmlFor="endTime">End Time</Label>
+                  <Input
+                    id="endTime"
+                    type="datetime-local"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={handleBookAppointment} 
+                type="button" 
+                className="mt-4"
+                disabled={!petId || !selectedStaff || !startTime || !endTime}
+              >
+                Book Appointment
+              </Button>
+              {bookingError && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mt-4">
+                  {bookingError}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

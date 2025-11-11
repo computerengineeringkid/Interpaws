@@ -137,7 +137,7 @@ async def get_current_client(current_user: models.Client = Depends(get_current_u
 # ============================================
 
 @app.post("/bookings/", response_model=schemas.Booking)
-async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)):
+async def create_booking(booking: schemas.BookingCreate, current_user: models.Client = Depends(get_current_user), db: Session = Depends(get_db)):
     # Check if the staff member is available during the requested time
     is_available = check_availability(db, booking.staff_id, booking.start_time, booking.end_time)
     
@@ -147,7 +147,13 @@ async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(g
             detail="Staff member is not available during this time slot."
         )
     
-    db_booking = models.Booking(**booking.model_dump())  # type: ignore[arg-type]
+    db_booking = models.Booking(
+        start_time=booking.start_time,
+        end_time=booking.end_time,
+        client_id=current_user.id,
+        pet_id=booking.pet_id,
+        staff_id=booking.staff_id
+    )
     db.add(db_booking)
     db.commit()
     db.refresh(db_booking)
@@ -155,7 +161,7 @@ async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(g
 
 
 @app.get("/bookings/{date}", response_model=List[schemas.Booking])
-async def get_bookings_for_date(date: date, db: Session = Depends(get_db)):
+async def get_bookings_for_date(date: date, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     return (
         db.query(models.Booking)
         .filter(cast(models.Booking.start_time, Date) == date)
@@ -262,7 +268,7 @@ Please answer the user's question using the context provided. Be helpful, friend
 
 # Staff Endpoints
 @app.post("/staff/", response_model=schemas.Staff, tags=["Staff"])
-def create_staff(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
+def create_staff(staff: schemas.StaffCreate, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     """Create a new staff member."""
     # Check if email already exists
     db_staff = db.query(models.Staff).filter(models.Staff.email == staff.email).first()
@@ -431,6 +437,7 @@ async def get_my_preferences(
 @app.post("/log-feedback/", response_model=schemas.AIFeedbackLog, tags=["AI Feedback"])
 async def log_ai_feedback(
     booking_id: int,
+    current_user: models.Client = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """

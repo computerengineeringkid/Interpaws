@@ -40,8 +40,11 @@ class BookingBase(BaseModel):
     staff_id: int
 
 
-class BookingCreate(BookingBase):
-    pass
+class BookingCreate(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    pet_id: int
+    staff_id: int
 
 
 class BookingUpdate(BaseModel):
@@ -53,6 +56,7 @@ class BookingUpdate(BaseModel):
 class Booking(BookingBase):
     id: int
     status: str
+    complaint_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

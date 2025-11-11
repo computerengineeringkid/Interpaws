@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import Date, cast, text
+from sqlalchemy import Date, cast, text, func, desc
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -191,6 +191,30 @@ async def get_ai_suggestions(
     # Get embedding for the complaint text
     complaint_vector = get_embedding(request.complaint_text)
     
+    # Query AIFeedbackLog to find "proven staff" from past successful bookings
+    # Find staff who have successfully handled similar complaints (L2 distance < 0.5)
+    proven_staff_query = (
+        db.query(
+            models.AIFeedbackLog.staff_id,
+            func.count(models.AIFeedbackLog.id).label('match_count')
+        )
+        .filter(models.AIFeedbackLog.client_complaint_vector.l2_distance(complaint_vector) < 0.5)
+        .group_by(models.AIFeedbackLog.staff_id)
+        .order_by(desc('match_count'))
+        .limit(2)
+        .all()
+    )
+    
+    # Get full staff details for proven staff
+    proven_staff_ids = [row.staff_id for row in proven_staff_query]
+    proven_staff_details = []
+    if proven_staff_ids:
+        proven_staff_details = (
+            db.query(models.Staff.id, models.Staff.name, models.Staff.role)
+            .filter(models.Staff.id.in_(proven_staff_ids))
+            .all()
+        )
+    
     # Perform vector search to find top 3 matching staff members
     # Using the <-> operator for L2 distance in pgvector
     # Only select the columns that exist in the database
@@ -207,11 +231,27 @@ async def get_ai_suggestions(
         for staff in top_staff
     ])
     
+    # Build the prompt with both skill-based and proven matches
     prompt = f"""Given the following pet complaint: "{request.complaint_text}"
 
 We have identified the following staff members as potential matches based on their skills:
 {staff_info}
+"""
+    
+    # Add proven staff section if we have any
+    if proven_staff_details:
+        proven_info = "\n".join([
+            f"- {staff.name} ({staff.role})"
+            for staff in proven_staff_details
+        ])
+        prompt += f"""
+Proven Matches from Past Successes:
+{proven_info}
 
+These staff members have successfully handled similar complaints in the past.
+"""
+    
+    prompt += """
 Please explain why these staff members are a good match for this complaint and suggest some potential appointment times for the next week. Be concise and friendly."""
     
     # Get generative recommendation from Ollama

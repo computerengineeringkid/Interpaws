@@ -2,13 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function MyBookingsPage() {
   const { token } = useAuth();
-  const router = useRouter();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -62,11 +60,12 @@ export default function MyBookingsPage() {
                   <CardTitle>Booking #{booking.id}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p><strong>Date:</strong> {new Date(booking.booking_date).toLocaleDateString()}</p>
-                  <p><strong>Time Slot:</strong> {booking.time_slot}</p>
-                  <p><strong>Service:</strong> {booking.service_type}</p>
+                  <p><strong>Start:</strong> {new Date(booking.start_time).toLocaleString()}</p>
+                  <p><strong>End:</strong> {new Date(booking.end_time).toLocaleString()}</p>
                   <p><strong>Status:</strong> {booking.status}</p>
-                  {booking.notes && <p><strong>Notes:</strong> {booking.notes}</p>}
+                  {booking.staff_id && <p><strong>Staff ID:</strong> {booking.staff_id}</p>}
+                  {booking.pet_id && <p><strong>Pet ID:</strong> {booking.pet_id}</p>}
+                  {booking.complaint_reason && <p><strong>Complaint:</strong> {booking.complaint_reason}</p>}
                 </CardContent>
               </Card>
             ))}

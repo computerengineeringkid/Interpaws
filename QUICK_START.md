@@ -59,7 +59,7 @@ curl -X POST "http://localhost:8000/staff/" \
 
 ### 👨‍⚕️ Admin Dashboard
 
-1. **Open:** http://localhost:3000/admin/login
+1. **Open:** http://localhost:3000/admin/admin-login
 2. **Login:**
    - Email: admin@interpaws.com
    - Password: admin123
@@ -85,7 +85,7 @@ curl -X POST "http://localhost:8000/staff/" \
 ### Admin Test (3 minutes)
 
 ```
-1. Go to http://localhost:3000/admin/login
+1. Go to http://localhost:3000/admin/admin-login
 2. Login with admin credentials
 3. Click "Staff" → Create new staff member
 4. Click "Medications" → Add new medication

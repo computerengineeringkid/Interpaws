@@ -80,7 +80,7 @@ docker-compose up --build
 
 ### Test 1: Admin Login
 
-1. Navigate to http://localhost:3000/admin/login
+1. Navigate to http://localhost:3000/admin/admin-login
 2. First, create an admin account via backend:
 
 ```bash
@@ -220,7 +220,7 @@ curl -X POST "http://localhost:8000/staff/" \
 
    - Login as client
    - Navigate to http://localhost:3000/admin
-   - ✅ Should redirect to /admin/login
+   - ✅ Should redirect to /admin/admin-login
 
 2. **Try to access client pages as admin:**
    - Login as admin
@@ -234,7 +234,7 @@ curl -X POST "http://localhost:8000/staff/" \
    - Navigate to http://localhost:3000/my-bookings
    - ✅ Should redirect to /login
    - Navigate to http://localhost:3000/admin
-   - ✅ Should redirect to /admin/login
+   - ✅ Should redirect to /admin/admin-login
 
 2. **Token expiration:**
    - Clear localStorage

@@ -42,7 +42,7 @@ This sprint completed the full integration of admin-facing UI with the backend V
 **Features:**
 
 - ✅ Uses `isAdmin` from AuthContext
-- ✅ Redirects to `/admin/login` if not authenticated as admin
+- ✅ Redirects to `/admin/admin-login` if not authenticated as admin
 - ✅ Shows loading state during auth check
 - ✅ Similar pattern to ProtectedRoute but for admin access
 
@@ -240,7 +240,7 @@ frontend/src/
 ### Admin Authentication Flow
 
 ```
-1. Staff logs in at /admin/login
+1. Staff logs in at /admin/admin-login
 2. POST /staff/login endpoint
 3. Receives JWT token
 4. Token stored with userRole='admin'
@@ -455,7 +455,7 @@ docker-compose down
 **API Docs:** http://localhost:8000/docs
 
 **Client Login:** http://localhost:3000/login  
-**Admin Login:** http://localhost:3000/admin/login
+**Admin Login:** http://localhost:3000/admin/admin-login
 
 **Testing Guide:** E2E_TESTING_GUIDE.md  
 **Setup Guide:** SETUP_GUIDE.md  

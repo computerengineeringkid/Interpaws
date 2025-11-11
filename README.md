@@ -79,10 +79,10 @@ Interpaws/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── (admin)/          # Admin pages
-│   │   │   │   ├── layout.js     # Admin layout with nav
-│   │   │   │   ├── login/page.js # Admin login
-│   │   │   │   ├── admin/page.js # Dashboard
+│   │   │   ├── admin/            # Admin pages
+│   │   │   │   ├── layout.js            # Admin layout with nav
+│   │   │   │   ├── admin-login/page.js  # Admin login
+│   │   │   │   ├── dashboard/page.js    # Dashboard
 │   │   │   │   ├── staff/page.js # Staff management
 │   │   │   │   ├── surgeries/page.js # Surgery management
 │   │   │   │   └── medications/page.js # Medication inventory
@@ -147,7 +147,8 @@ curl -X POST "http://localhost:8000/staff/" \
 
 4. **Access the application:**
    - **Client Portal:** http://localhost:3000
-   - **Admin Dashboard:** http://localhost:3000/admin/login
+  - **Admin Login:** http://localhost:3000/admin/admin-login
+  - **Admin Dashboard:** http://localhost:3000/admin/dashboard
    - **API Docs:** http://localhost:8000/docs
 
 For detailed setup instructions, see [QUICK_START.md](QUICK_START.md)
@@ -352,7 +353,7 @@ See [E2E_TESTING_GUIDE.md](E2E_TESTING_GUIDE.md) for comprehensive testing proce
 4. Add preferences
 
 # Test admin flow
-1. Login at http://localhost:3000/admin/login
+1. Login at http://localhost:3000/admin/admin-login
 2. Create staff member
 3. Add medication
 4. Schedule surgery

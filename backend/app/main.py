@@ -277,6 +277,30 @@ async def handle_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     # Get embedding for the complaint text
     complaint_vector = get_embedding(request.complaint_text)
     
+    # Query AIFeedbackLog to find "proven staff" from past successful bookings
+    # Find staff who have successfully handled similar complaints (L2 distance < 0.5)
+    proven_staff_query = (
+        db.query(
+            models.AIFeedbackLog.staff_id,
+            func.count(models.AIFeedbackLog.id).label('match_count')
+        )
+        .filter(models.AIFeedbackLog.client_complaint_vector.l2_distance(complaint_vector) < 0.5)
+        .group_by(models.AIFeedbackLog.staff_id)
+        .order_by(desc('match_count'))
+        .limit(2)
+        .all()
+    )
+    
+    # Get full staff details for proven staff
+    proven_staff_ids = [row.staff_id for row in proven_staff_query]
+    proven_staff_details = []
+    if proven_staff_ids:
+        proven_staff_details = (
+            db.query(models.Staff.id, models.Staff.name, models.Staff.role)
+            .filter(models.Staff.id.in_(proven_staff_ids))
+            .all()
+        )
+    
     # Perform vector search to find top 3 matching staff members
     top_staff = (
         db.query(models.Staff.id, models.Staff.name, models.Staff.role)
@@ -297,7 +321,22 @@ The pet owner has described the following issue: "{request.complaint_text}"
 
 Based on this complaint, we have identified the following staff members as the best matches:
 {staff_info}
+"""
+    
+    # Add proven staff section if we have any
+    if proven_staff_details:
+        proven_info = "\n".join([
+            f"- {staff.name} ({staff.role})"
+            for staff in proven_staff_details
+        ])
+        enhanced_prompt += f"""
+Proven Matches from Past Successes:
+{proven_info}
 
+These staff members have successfully handled similar complaints in the past.
+"""
+    
+    enhanced_prompt += f"""
 User's Question: {request.prompt}
 
 Please answer the user's question using the context provided. Be helpful, friendly, and concise."""

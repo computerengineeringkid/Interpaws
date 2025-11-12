@@ -271,6 +271,28 @@ Please explain why these staff members are a good match for this complaint and s
     )
 
 
+@app.post("/chat/triage", response_model=ChatResponse, tags=["AI Chat"])
+async def triage_chat(request: schemas.SuggestionRequest):
+    """
+    AI triage endpoint that asks clarifying questions about the user's initial complaint.
+    This endpoint initiates an intelligent conversation to gather more details.
+    """
+    triage_prompt = f"""You are an AI veterinary assistant. A client has entered the following complaint: '{request.complaint_text}'.
+
+Ask one or two clarifying questions to get more details. Consider questions about:
+- What breed is your pet?
+- How long has this been happening?
+- Are there any other symptoms?
+- Has your pet experienced this before?
+- Is your pet eating and drinking normally?
+- Has there been any recent change in behavior or environment?
+
+Be friendly, concise, and professional. Ask the most relevant questions based on the complaint."""
+    
+    ai_response = await get_ollama_recommendation(triage_prompt)
+    return ChatResponse(response=ai_response)
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def handle_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     """Smart AI chat endpoint with context from complaint text and staff matching."""

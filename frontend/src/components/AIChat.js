@@ -1,16 +1,59 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export default function AIChat({ complaint }) {
+const AIChat = forwardRef(({ complaint }, ref) => {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [triageInitiated, setTriageInitiated] = useState(false);
+
+  // Expose getChatHistory method to parent component via ref
+  useImperativeHandle(ref, () => ({
+    getChatHistory: () => {
+      // Return formatted chat history as a single string
+      return messages.map(m => `${m.role === 'user' ? 'Client' : 'AI'}: ${m.content}`).join('\n');
+    }
+  }));
+
+  // Auto-trigger triage when complaint changes
+  useEffect(() => {
+    async function initiateTriage() {
+      // Only trigger if we have a complaint, messages are empty, and we haven't initiated triage yet
+      if (complaint && complaint.trim() && messages.length === 0 && !triageInitiated) {
+        setTriageInitiated(true);
+        setIsLoading(true);
+
+        try {
+          const res = await fetch("/api/chat/triage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ complaint_text: complaint }),
+          });
+
+          if (!res.ok) {
+            throw new Error(`Request failed with status ${res.status}`);
+          }
+
+          const result = await res.json();
+          const aiMessage = { role: "ai", content: result.response };
+          setMessages([aiMessage]);
+        } catch (err) {
+          const errorMessage = { role: "ai", content: "Sorry, I couldn't start the triage process. Please try again." };
+          setMessages([errorMessage]);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    initiateTriage();
+  }, [complaint, messages.length, triageInitiated]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -72,8 +115,8 @@ export default function AIChat({ complaint }) {
               {messages.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
                   {complaint && complaint.trim() 
-                    ? "I can see your pet's issue. Ask me anything about recommended staff, treatment options, or scheduling!"
-                    : "Please describe your pet's issue in the booking form above, then ask me questions here."}
+                    ? "Starting AI triage interview..."
+                    : "Please describe your pet's issue in the booking form above, then I'll ask you some questions to help better understand the situation."}
                 </div>
               ) : (
                 messages.map((m, idx) => (
@@ -104,7 +147,7 @@ export default function AIChat({ complaint }) {
             <Input
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={isLoading ? "Thinking..." : "Ask about staff, treatments, or scheduling..."}
+              placeholder={isLoading ? "Thinking..." : "Answer the AI's questions or ask your own..."}
               disabled={isLoading}
             />
             <Button type="submit" disabled={isLoading}>
@@ -115,4 +158,8 @@ export default function AIChat({ complaint }) {
       </CardContent>
     </Card>
   );
-}
+});
+
+AIChat.displayName = "AIChat";
+
+export default AIChat;

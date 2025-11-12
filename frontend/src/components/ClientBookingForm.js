@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { AuthContext } from "@/context/AuthContext";
 
-export default function ClientBookingForm({ complaint, setComplaint }) {
+export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }) {
   const { user, login } = useContext(AuthContext);
   const [petName, setPetName] = useState("");
   const [petId, setPetId] = useState("");
@@ -44,8 +44,18 @@ export default function ClientBookingForm({ complaint, setComplaint }) {
     setError(null);
     
     try {
+      // Get chat history from AIChat component
+      let enrichedComplaint = complaint;
+      if (aiChatRef && aiChatRef.current) {
+        const chatHistory = aiChatRef.current.getChatHistory();
+        if (chatHistory && chatHistory.trim()) {
+          // Bundle initial complaint with full chat history
+          enrichedComplaint = `Initial Complaint: ${complaint}\n\nChat History:\n${chatHistory}`;
+        }
+      }
+      
       const requestBody = {
-        complaint_text: complaint
+        complaint_text: enrichedComplaint
       };
       
       const response = await fetch('/api/suggest_slots', {

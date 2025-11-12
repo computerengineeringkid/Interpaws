@@ -208,3 +208,37 @@ class Medication(MedicationBase):
 
     class Config:
         from_attributes = True
+
+
+# SurgeryInventoryLink Schemas
+class SurgeryInventoryLinkBase(BaseModel):
+    surgery_type: str
+    medication_id: int
+    required_quantity: int = 1
+
+
+class SurgeryInventoryLinkCreate(SurgeryInventoryLinkBase):
+    pass
+
+
+class SurgeryInventoryLink(SurgeryInventoryLinkBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Inventory Check Schemas
+class InventoryCheckItem(BaseModel):
+    medication_id: int
+    medication_name: str
+    required_quantity: int
+    stock_quantity: int
+    status: str  # "OK" or "Low"
+
+    class Config:
+        from_attributes = True
+
+
+class InventoryCheckResponse(BaseModel):
+    items: List[InventoryCheckItem]

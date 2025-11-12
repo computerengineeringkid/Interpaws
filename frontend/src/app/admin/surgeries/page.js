@@ -26,6 +26,10 @@ function SurgeryManagementContent() {
   const [error, setError] = useState(null);
   const [editingSurgery, setEditingSurgery] = useState(null);
 
+  // Inventory check state
+  const [inventoryCheck, setInventoryCheck] = useState([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+
   // Filters
   const [filterDate, setFilterDate] = useState("");
   const [filterStaffId, setFilterStaffId] = useState("");
@@ -78,6 +82,42 @@ function SurgeryManagementContent() {
       fetchSurgeries();
     }
   }, [token, filterDate, filterStaffId, filterPetId]);
+
+  // Check inventory when surgery_type changes
+  useEffect(() => {
+    const checkInventory = async () => {
+      if (!formData.surgery_type || !token) {
+        setInventoryCheck([]);
+        return;
+      }
+
+      setInventoryLoading(true);
+      try {
+        const response = await fetch(
+          `/api/surgeries/check_inventory?surgery_type=${encodeURIComponent(formData.surgery_type)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to check inventory");
+        }
+
+        const data = await response.json();
+        setInventoryCheck(data.items || []);
+      } catch (err) {
+        console.error("Error checking inventory:", err);
+        setInventoryCheck([]);
+      } finally {
+        setInventoryLoading(false);
+      }
+    };
+
+    checkInventory();
+  }, [formData.surgery_type, token]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -302,6 +342,45 @@ function SurgeryManagementContent() {
                     required
                   />
                 </div>
+
+                {/* Inventory Check Display */}
+                {formData.surgery_type && (
+                  <div className="space-y-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-md">
+                    <h3 className="font-semibold text-sm">Required Inventory:</h3>
+                    {inventoryLoading && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Checking inventory...
+                      </p>
+                    )}
+                    {!inventoryLoading && inventoryCheck.length === 0 && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        No inventory requirements configured for this surgery type.
+                      </p>
+                    )}
+                    {!inventoryLoading && inventoryCheck.length > 0 && (
+                      <ul className="space-y-1">
+                        {inventoryCheck.map((item, idx) => (
+                          <li
+                            key={idx}
+                            className={`text-sm flex justify-between ${
+                              item.status === "Low"
+                                ? "text-red-600 dark:text-red-400 font-semibold"
+                                : "text-green-600 dark:text-green-400"
+                            }`}
+                          >
+                            <span>
+                              {item.medication_name}:
+                            </span>
+                            <span>
+                              {item.required_quantity} required / {item.stock_quantity} in stock
+                              {item.status === "Low" && " ⚠️"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">

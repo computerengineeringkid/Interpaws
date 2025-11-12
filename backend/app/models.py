@@ -95,3 +95,12 @@ class Medication(Base):
     description = Column(Text, nullable=True)
     stock_quantity = Column(Integer, default=0)
     unit = Column(String)  # e.g., "mg", "ml", "tablets"
+
+
+class SurgeryInventoryLink(Base):
+    __tablename__ = "surgery_inventory_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    surgery_type = Column(String, index=True)  # e.g., "Spay", "Orthopedic"
+    medication_id = Column(Integer, ForeignKey("medications.id"))
+    required_quantity = Column(Integer, default=1)

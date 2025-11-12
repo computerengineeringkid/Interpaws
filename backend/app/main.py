@@ -624,6 +624,50 @@ def get_surgery(
     return surgery
 
 
+@app.get("/surgeries/check_inventory", response_model=schemas.InventoryCheckResponse, tags=["Surgeries"])
+def check_surgery_inventory(
+    surgery_type: str,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Check medication inventory for a specific surgery type.
+    Returns a list of required medications with their stock status.
+    Admin only.
+    """
+    # Query SurgeryInventoryLink for the given surgery type
+    inventory_links = (
+        db.query(models.SurgeryInventoryLink)
+        .filter(models.SurgeryInventoryLink.surgery_type == surgery_type)
+        .all()
+    )
+    
+    if not inventory_links:
+        # Return empty list if no inventory links found for this surgery type
+        return schemas.InventoryCheckResponse(items=[])
+    
+    # Build the response items
+    items = []
+    for link in inventory_links:
+        # Get the medication details
+        medication = db.query(models.Medication).filter(models.Medication.id == link.medication_id).first()
+        
+        if medication:
+            # Determine status based on stock vs required
+            status = "OK" if medication.stock_quantity >= link.required_quantity else "Low"
+            
+            item = schemas.InventoryCheckItem(
+                medication_id=medication.id,
+                medication_name=medication.name,
+                required_quantity=link.required_quantity,
+                stock_quantity=medication.stock_quantity,
+                status=status
+            )
+            items.append(item)
+    
+    return schemas.InventoryCheckResponse(items=items)
+
+
 @app.put("/surgeries/{surgery_id}", response_model=schemas.Surgery, tags=["Surgeries"])
 def update_surgery(
     surgery_id: int,
@@ -631,11 +675,30 @@ def update_surgery(
     current_admin: models.Staff = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Update a surgery. Admin only."""
+    """Update a surgery. Admin only. Automatically decrements inventory when status is set to 'Completed'."""
     db_surgery = db.query(models.Surgery).filter(models.Surgery.id == surgery_id).first()
     
     if not db_surgery:
         raise HTTPException(status_code=404, detail="Surgery not found")
+    
+    # Check if status is being changed to "Completed"
+    if surgery_update.status and surgery_update.status == "Completed" and db_surgery.status != "Completed":
+        # Query SurgeryInventoryLink for required medications
+        inventory_links = (
+            db.query(models.SurgeryInventoryLink)
+            .filter(models.SurgeryInventoryLink.surgery_type == db_surgery.surgery_type)
+            .all()
+        )
+        
+        # Decrement stock for each required medication
+        for link in inventory_links:
+            medication = db.query(models.Medication).filter(models.Medication.id == link.medication_id).first()
+            if medication:
+                # Decrement stock quantity
+                medication.stock_quantity -= link.required_quantity
+                # Ensure stock doesn't go negative (optional safety check)
+                if medication.stock_quantity < 0:
+                    medication.stock_quantity = 0
     
     # Update only the fields that are provided
     update_data = surgery_update.model_dump(exclude_unset=True)

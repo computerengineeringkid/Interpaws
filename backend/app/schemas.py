@@ -105,6 +105,21 @@ class SuggestionResponse(BaseModel):
     suggested_staff: List[SuggestedStaff]
 
 
+class RiskAssessment(BaseModel):
+    risk_score: float  # 0.0 (low) to 1.0 (high)
+    risk_level: str    # "Low", "Medium", "High"
+    reasoning: str
+
+
+class SuggestedSlot(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    staff_id: int
+    staff_name: Optional[str] = None
+    preference_match: Optional[float] = None
+    reason: Optional[str] = None
+
+
 class ChatRequest(BaseModel):
     prompt: str
 

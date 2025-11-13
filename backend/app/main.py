@@ -1,5 +1,6 @@
+import json
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -181,6 +182,258 @@ async def get_my_bookings(
         .order_by(models.Booking.start_time.desc())
         .all()
     )
+
+
+@app.get(
+    "/admin/bookings/{booking_id}/risk",
+    response_model=schemas.RiskAssessment,
+    tags=["Bookings", "Admin", "AI"],
+)
+async def assess_booking_risk(
+    booking_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Return an AI-backed risk score for a specific booking."""
+
+    def derive_risk_level(score: float) -> str:
+        if score >= 0.7:
+            return "High"
+        if score >= 0.4:
+            return "Medium"
+        return "Low"
+
+    def clamp_score(value: float) -> float:
+        return max(0.0, min(1.0, value))
+
+    def parse_llm_json(raw: str) -> Optional[dict]:
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            if not raw:
+                return None
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    return json.loads(raw[start:end + 1])
+                except json.JSONDecodeError:
+                    return None
+        return None
+
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    client = db.query(models.Client).filter(models.Client.id == booking.client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found for booking")
+
+    total_bookings = (
+        db.query(func.count(models.Booking.id))
+        .filter(models.Booking.client_id == client.id)
+        .scalar()
+    ) or 0
+
+    cancelled_bookings = (
+        db.query(func.count(models.Booking.id))
+        .filter(
+            models.Booking.client_id == client.id,
+            models.Booking.status == "cancelled"
+        )
+        .scalar()
+    ) or 0
+
+    pet = db.query(models.Pet).filter(models.Pet.id == booking.pet_id).first()
+    pet_species = pet.species if pet else "Unknown"
+
+    lead_time_days = max(
+        0.0,
+        (booking.start_time - datetime.utcnow()).total_seconds() / 86400
+    )
+
+    booking_type = "Checkup"
+    if booking.complaint_reason and "surg" in booking.complaint_reason.lower():
+        booking_type = "Surgery"
+
+    prompt = f"""Analyze this veterinary appointment cancellation risk and respond with JSON only.\n\nClient: {client.name}\nBooking ID: {booking.id}\nHistory: {cancelled_bookings} cancellations out of {total_bookings} bookings.\nBooking Type: {booking_type}\nLead Time (days): {lead_time_days:.1f}\nPet Species: {pet_species}\nAppointment Start: {booking.start_time.isoformat()}\n\nReturn valid JSON with keys risk_score (0-1 float), risk_level (Low/Medium/High), reasoning (concise sentence < 30 words)."""
+
+    llm_payload = None
+    try:
+        llm_response = await get_ollama_recommendation(prompt)
+        llm_payload = parse_llm_json(llm_response)
+    except Exception:
+        llm_payload = None
+
+    if llm_payload:
+        try:
+            risk_score = clamp_score(float(llm_payload.get("risk_score", 0.5)))
+        except (TypeError, ValueError):
+            risk_score = 0.5
+
+        provided_level = (llm_payload.get("risk_level") or "").strip().capitalize()
+        if provided_level not in {"Low", "Medium", "High"}:
+            provided_level = derive_risk_level(risk_score)
+
+        reasoning = llm_payload.get("reasoning") or llm_payload.get("reason")
+        if not reasoning:
+            reasoning = f"Historical cancellations: {cancelled_bookings}/{total_bookings}."
+
+        return schemas.RiskAssessment(
+            risk_score=risk_score,
+            risk_level=provided_level,
+            reasoning=reasoning.strip()
+        )
+
+    # Fallback heuristic if AI output is unavailable or invalid
+    history_ratio = (cancelled_bookings / total_bookings) if total_bookings else 0.25
+    lead_factor = 0.25 if lead_time_days <= 2 else 0.1 if lead_time_days <= 5 else 0.05
+    type_factor = 0.1 if booking_type == "Surgery" else 0.0
+    risk_score = clamp_score(history_ratio * 0.6 + lead_factor + type_factor)
+
+    if cancelled_bookings:
+        history_snippet = f"{cancelled_bookings}/{total_bookings} cancellations historically"
+    else:
+        history_snippet = "Consistent attendance history"
+
+    if lead_time_days <= 2:
+        lead_snippet = "short lead time"
+    elif lead_time_days <= 5:
+        lead_snippet = "moderate notice"
+    else:
+        lead_snippet = "booked well in advance"
+
+    reason_parts = [history_snippet, lead_snippet]
+    if booking_type == "Surgery":
+        reason_parts.append("surgery anxiety considered")
+
+    return schemas.RiskAssessment(
+        risk_score=risk_score,
+        risk_level=derive_risk_level(risk_score),
+        reasoning="; ".join(reason_parts)
+    )
+
+
+@app.get(
+    "/bookings/{booking_id}/reschedule_options",
+    response_model=List[schemas.SuggestedSlot],
+    tags=["Bookings"],
+)
+def get_reschedule_options(
+    booking_id: int,
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Surface premium reschedule options tailored to a client's preferences."""
+
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to reschedule this booking")
+
+    if not booking.end_time or booking.end_time <= booking.start_time:
+        raise HTTPException(status_code=400, detail="Booking duration is invalid")
+
+    duration = booking.end_time - booking.start_time
+    now = datetime.utcnow()
+
+    preference = (
+        db.query(models.Preferences)
+        .filter(models.Preferences.client_id == current_user.id)
+        .first()
+    )
+    preference_vector = None
+    if preference and preference.details_vector is not None:
+        preference_vector = list(preference.details_vector)
+
+    staff_records = db.query(models.Staff).all()
+    if not staff_records:
+        return []
+
+    staff_map = {staff.id: staff for staff in staff_records}
+    staff_order: List[int] = []
+    if booking.staff_id:
+        staff_order.append(booking.staff_id)
+    staff_order.extend([staff.id for staff in staff_records if staff.id not in staff_order])
+
+    BUSINESS_START_HOUR = 9
+    BUSINESS_END_HOUR = 17
+    LOOKAHEAD_DAYS = 14
+    MAX_CANDIDATES = 15
+
+    candidate_slots = []
+    lookahead_end = now + timedelta(days=LOOKAHEAD_DAYS)
+
+    day_cursor = now
+    while day_cursor <= lookahead_end and len(candidate_slots) < MAX_CANDIDATES:
+        day_start = day_cursor.replace(hour=0, minute=0, second=0, microsecond=0)
+        for hour in range(BUSINESS_START_HOUR, BUSINESS_END_HOUR):
+            slot_start = day_start.replace(hour=hour, minute=0, second=0, microsecond=0)
+            if slot_start <= now:
+                continue
+
+            slot_end = slot_start + duration
+            if slot_end.date() != slot_start.date():
+                continue
+            if slot_end.hour > BUSINESS_END_HOUR or (
+                slot_end.hour == BUSINESS_END_HOUR and slot_end.minute > 0
+            ):
+                continue
+
+            for staff_id in staff_order:
+                staff = staff_map.get(staff_id)
+                if not staff:
+                    continue
+                if not check_availability(db, staff_id, slot_start, slot_end):
+                    continue
+
+                descriptor = f"{slot_start.strftime('%A %I:%M %p')} with {staff.name}"
+                preference_match = 0.5
+                if preference_vector is not None:
+                    slot_embedding = get_embedding(descriptor)
+                    distance = sum(
+                        (a - b) ** 2
+                        for a, b in zip(preference_vector, slot_embedding)
+                    ) ** 0.5
+                    preference_match = max(0.0, min(1.0, 1 - (distance / 2)))
+
+                continuity_bonus = 0.2 if staff_id == booking.staff_id else 0.0
+                days_out = max(0.0, (slot_start - now).total_seconds() / 86400)
+                recency_bonus = max(0.0, 1 - (days_out / LOOKAHEAD_DAYS)) * 0.2
+                score = preference_match + continuity_bonus + recency_bonus
+
+                reason_bits = []
+                if staff_id == booking.staff_id:
+                    reason_bits.append("Keeps you with the same care team")
+                if preference_match >= 0.65:
+                    reason_bits.append("Matches your saved preferences")
+                reason_bits.append(slot_start.strftime("%A %I:%M %p"))
+
+                candidate_slots.append({
+                    "score": score,
+                    "slot": schemas.SuggestedSlot(
+                        start_time=slot_start,
+                        end_time=slot_end,
+                        staff_id=staff_id,
+                        staff_name=staff.name,
+                        preference_match=round(preference_match, 3),
+                        reason=" • ".join(reason_bits)
+                    ),
+                })
+
+                if len(candidate_slots) >= MAX_CANDIDATES:
+                    break
+            if len(candidate_slots) >= MAX_CANDIDATES:
+                break
+        day_cursor += timedelta(days=1)
+
+    if not candidate_slots:
+        return []
+
+    candidate_slots.sort(key=lambda item: item["score"], reverse=True)
+    top_slots = [entry["slot"] for entry in candidate_slots[:3]]
+    return top_slots
 
 
 @app.post("/suggest_slots", response_model=schemas.SuggestionResponse)

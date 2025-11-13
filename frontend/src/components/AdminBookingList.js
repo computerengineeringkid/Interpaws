@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { format } from "date-fns/format";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -13,6 +13,8 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
   const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [riskSnapshots, setRiskSnapshots] = useState({});
+  const [riskLoading, setRiskLoading] = useState({});
 
   const fetchBookings = useCallback(async () => {
     if (!token) return;
@@ -45,6 +47,100 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
   useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
+
+  const fetchRisk = useCallback(async (bookingId) => {
+    if (!token) return;
+    setRiskLoading((prev) => ({ ...prev, [bookingId]: true }));
+    try {
+      const response = await fetch(`/api/admin/bookings/${bookingId}/risk`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch risk');
+      }
+
+      const data = await response.json();
+      setRiskSnapshots((prev) => ({ ...prev, [bookingId]: data }));
+    } catch (err) {
+      setRiskSnapshots((prev) => ({
+        ...prev,
+        [bookingId]: {
+          risk_level: 'Unknown',
+          risk_score: 0,
+          reasoning: 'Risk data unavailable',
+        },
+      }));
+      console.error('Error fetching risk score:', err);
+    } finally {
+      setRiskLoading((prev) => ({ ...prev, [bookingId]: false }));
+    }
+  }, [token]);
+
+  const prioritizedBookings = useMemo(() => {
+    const upcoming = bookings
+      .filter((booking) => new Date(booking.start_time) >= new Date())
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+    return upcoming.slice(0, 5).map((b) => b.id);
+  }, [bookings]);
+
+  useEffect(() => {
+    prioritizedBookings.forEach((bookingId) => {
+      if (!riskSnapshots[bookingId] && !riskLoading[bookingId]) {
+        fetchRisk(bookingId);
+      }
+    });
+  }, [prioritizedBookings, fetchRisk, riskSnapshots, riskLoading]);
+
+  const getRiskBadge = (bookingId) => {
+    const snapshot = riskSnapshots[bookingId];
+    if (!snapshot) {
+      return (
+        <span
+          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500 animate-pulse"
+          title="Loading risk..."
+          onMouseEnter={() => {
+            if (!riskLoading[bookingId]) {
+              fetchRisk(bookingId);
+            }
+          }}
+        >
+          ...
+        </span>
+      );
+    }
+
+    const level = snapshot.risk_level || 'Unknown';
+    const reasoning = snapshot.reasoning || 'No reasoning available';
+    const palette = {
+      Low: 'bg-emerald-100 text-emerald-700',
+      Medium: 'bg-amber-100 text-amber-700',
+      High: 'bg-red-100 text-red-700',
+      Unknown: 'bg-slate-100 text-slate-600',
+    };
+    const iconMap = {
+      Low: '🟢',
+      Medium: '🟡',
+      High: '🔴',
+      Unknown: '⚪️',
+    };
+
+    return (
+      <span
+        className={`rounded-full px-3 py-1 text-xs font-semibold ${palette[level] || palette.Unknown} animate-fade-in`}
+        title={`${level} Risk: ${reasoning}`}
+        onMouseEnter={() => {
+          if (!riskSnapshots[bookingId] && !riskLoading[bookingId]) {
+            fetchRisk(bookingId);
+          }
+        }}
+      >
+        {iconMap[level] || iconMap.Unknown} {level}
+      </span>
+    );
+  };
 
   const handleDeleteBooking = async (bookingId) => {
     if (!window.confirm('Are you sure you want to delete this booking?')) {
@@ -161,19 +257,22 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
                 <TableRow key={booking.id}>
                   <TableCell>{format(new Date(booking.start_time), 'HH:mm')}</TableCell>
                   <TableCell>
-                    <Select 
-                      value={booking.status} 
-                      onValueChange={(newStatus) => handleUpdateStatus(booking.id, newStatus)}
-                    >
-                      <SelectTrigger className="w-[150px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="confirmed">confirmed</SelectItem>
-                        <SelectItem value="completed">completed</SelectItem>
-                        <SelectItem value="cancelled">cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Select 
+                        value={booking.status} 
+                        onValueChange={(newStatus) => handleUpdateStatus(booking.id, newStatus)}
+                      >
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="confirmed">confirmed</SelectItem>
+                          <SelectItem value="completed">completed</SelectItem>
+                          <SelectItem value="cancelled">cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {getRiskBadge(booking.id)}
+                    </div>
                   </TableCell>
                   <TableCell>{booking.client_id}</TableCell>
                   <TableCell>{booking.staff_id}</TableCell>

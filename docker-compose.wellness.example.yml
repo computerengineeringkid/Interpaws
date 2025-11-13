@@ -1,0 +1,45 @@
+# Wellness Outreach Scheduler - Docker Compose Service Example
+#
+# Add this service to your docker-compose.yml to run wellness outreach
+# automatically on a schedule.
+#
+# Usage: Copy the service definition below into your docker-compose.yml
+#        under the 'services:' section.
+
+wellness-scheduler:
+  build: ./backend
+  container_name: interpaws-wellness-scheduler
+  command: python -m app.wellness_scheduler
+  depends_on:
+    - db
+    - ollama
+    - backend
+  environment:
+    - DATABASE_URL=postgresql://user:password@db/interpawsdb
+    - OLLAMA_HOST=http://ollama:11434
+  volumes:
+    - ./backend:/app
+  restart: unless-stopped
+  networks:
+    - interpaws-network
+
+# Note: Make sure the 'networks' section at the bottom of docker-compose.yml
+# includes 'interpaws-network' if it's defined there.
+
+# Alternative: Run wellness outreach as a one-time job
+# 
+# wellness-outreach-job:
+#   build: ./backend
+#   command: python -m app.wellness_outreach
+#   depends_on:
+#     - db
+#     - ollama
+#   environment:
+#     - DATABASE_URL=postgresql://user:password@db/interpawsdb
+#     - OLLAMA_HOST=http://ollama:11434
+#   volumes:
+#     - ./backend:/app
+#   profiles:
+#     - tools  # Only runs when explicitly called with --profile tools
+#
+# Run with: docker-compose --profile tools up wellness-outreach-job

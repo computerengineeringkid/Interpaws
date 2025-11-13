@@ -197,6 +197,7 @@ docker-compose up -d
 - ✅ **LLM Integration** - Ollama for natural language responses
 - ✅ **Smart Recommendations** - AI-suggested staff based on pet needs
 - ✅ **Feedback Loop** - Track successful matches for model improvement
+- ✅ **Wellness Outreach** - Proactive client engagement with AI-generated emails
 
 ### Security & Auth
 
@@ -479,7 +480,67 @@ For more troubleshooting, see [E2E_TESTING_GUIDE.md](E2E_TESTING_GUIDE.md#common
 
 ---
 
-## 👥 Contributing
+## � Wellness Outreach System
+
+The Wellness Outreach System (Sprint 7) proactively identifies pets due for care and generates personalized AI-powered outreach emails.
+
+### Features
+
+- **Automated Pet Detection** - Finds pets with no bookings in 12+ months
+- **Smart Scheduling** - Matches available slots with client preferences using vector similarity
+- **AI Email Generation** - Creates personalized, warm outreach emails via Ollama LLM
+- **Flexible Execution** - Run manually, as a cron job, or as a continuous scheduler
+
+### Quick Usage
+
+**Manual run:**
+```bash
+./run_wellness_outreach.sh
+```
+
+**From Docker:**
+```bash
+docker-compose exec backend python -m app.wellness_outreach
+```
+
+**Run tests:**
+```bash
+docker-compose exec backend python -m app.test_wellness_outreach
+```
+
+**As a scheduler (continuous service):**
+```bash
+docker-compose exec backend python -m app.wellness_scheduler
+```
+
+### Output
+
+Generates personalized emails like:
+```
+TO: john@example.com (John Doe)
+RE: Wellness Check for Max
+SUGGESTED SLOT: Monday, November 18 at 10:00 AM
+
+Dear John Doe,
+
+We hope this message finds you and Max doing well! It's been a while 
+since Max's last visit, and we wanted to reach out...
+```
+
+Emails are logged to `backend/outreach_log.txt` for review.
+
+### Documentation
+
+See **[WELLNESS_OUTREACH_GUIDE.md](WELLNESS_OUTREACH_GUIDE.md)** for:
+- Architecture details
+- Configuration options
+- Scheduling setup (cron/Docker)
+- Testing procedures
+- Customization guide
+
+---
+
+## �👥 Contributing
 
 We welcome contributions to InterPaws! Here's how to get started:
 
@@ -523,6 +584,7 @@ We welcome contributions to InterPaws! Here's how to get started:
 - 🧪 [E2E Testing Guide](E2E_TESTING_GUIDE.md) - Comprehensive testing procedures
 - 🔧 [Setup Guide](SETUP_GUIDE.md) - Detailed setup instructions
 - 📋 [Latest Updates](DAYS_12-14_SUMMARY.md) - Recent feature additions
+- 💌 [Wellness Outreach Guide](WELLNESS_OUTREACH_GUIDE.md) - Proactive client engagement system
 
 **API Reference:**
 

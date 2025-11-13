@@ -31,11 +31,11 @@ def create_test_data(db: Session):
     
     print("🔧 Creating test data...")
     
-    # Clean up existing test data
+    # Clean up existing test data (order matters for foreign keys)
     db.query(Booking).filter(Booking.complaint_reason == "TEST_DATA").delete()
+    db.query(Preferences).filter(Preferences.details.like("TEST:%")).delete()
     db.query(Pet).filter(Pet.breed == "TEST_BREED").delete()
     db.query(Client).filter(Client.email.like("test_%@wellness.test")).delete()
-    db.query(Preferences).filter(Preferences.details.like("TEST:%")).delete()
     db.commit()
     
     # Ensure clinic exists

@@ -242,3 +242,24 @@ class InventoryCheckItem(BaseModel):
 
 class InventoryCheckResponse(BaseModel):
     items: List[InventoryCheckItem]
+
+
+# Cancellation Suggestion Schemas (Sprint 8: Dynamic Slot-Filling)
+class CancellationSuggestion(BaseModel):
+    client_name: str
+    client_email: str
+    current_booking_id: int
+    current_booking_time: datetime
+    match_score: float
+    reason: str  # e.g., "Prefers morning appointments"
+
+    class Config:
+        from_attributes = True
+
+
+class CancellationSuggestionResponse(BaseModel):
+    cancelled_slot_time: datetime
+    suggestions: List[CancellationSuggestion]
+
+    class Config:
+        from_attributes = True

@@ -5,6 +5,10 @@
 ## 🚀 Quick Start
 
 ```bash
+# FIRST: Install new dependency (one-time setup)
+docker-compose exec backend pip install schedule
+# OR rebuild: docker-compose build backend
+
 # Run manually
 ./run_wellness_outreach.sh
 
@@ -20,13 +24,13 @@ docker-compose exec backend python -m app.wellness_scheduler
 
 ## 📁 Files
 
-| File | Purpose | Lines |
-|------|---------|-------|
-| `backend/app/wellness_outreach.py` | Core implementation | 420 |
-| `backend/app/wellness_scheduler.py` | Scheduler service | 95 |
-| `backend/app/test_wellness_outreach.py` | Test suite | 530 |
-| `run_wellness_outreach.sh` | Runner script | 35 |
-| `WELLNESS_OUTREACH_GUIDE.md` | Full documentation | 350+ |
+| File                                    | Purpose             | Lines |
+| --------------------------------------- | ------------------- | ----- |
+| `backend/app/wellness_outreach.py`      | Core implementation | 420   |
+| `backend/app/wellness_scheduler.py`     | Scheduler service   | 95    |
+| `backend/app/test_wellness_outreach.py` | Test suite          | 530   |
+| `run_wellness_outreach.sh`              | Runner script       | 35    |
+| `WELLNESS_OUTREACH_GUIDE.md`            | Full documentation  | 350+  |
 
 ## ⚙️ Configuration
 
@@ -44,7 +48,7 @@ BUSINESS_END_HOUR = 17        # 5 PM (last slot at 4)
 
 ```
 1. get_target_pets()         → Find pets needing care
-2. find_open_slots()         → Search available appointments  
+2. find_open_slots()         → Search available appointments
 3. match_slot_to_preference()→ Vector similarity matching
 4. generate_outreach_email() → LLM-powered email generation
 5. process_outreach()        → Execute & log results
@@ -83,18 +87,21 @@ wellness-scheduler:
 ## 📋 Checklist Before Running
 
 - ✅ Docker containers running (`docker-compose ps`)
+- ✅ **NEW:** `schedule` package installed (`docker-compose exec backend pip install schedule`)
 - ✅ Database seeded with staff/clients
 - ✅ Ollama has `llama3` model (`ollama list`)
 - ✅ Test with `test_wellness_outreach.py` first
 
+**See [SPRINT_7_SETUP.md](SPRINT_7_SETUP.md) for first-time setup.**
+
 ## 🔧 Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| No pets found | Normal if all pets have recent/future bookings |
-| No slots available | Check staff exist, verify business hours |
-| Ollama error | `docker-compose exec ollama ollama pull llama3` |
-| Import error | `docker-compose restart backend` |
+| Issue              | Solution                                        |
+| ------------------ | ----------------------------------------------- |
+| No pets found      | Normal if all pets have recent/future bookings  |
+| No slots available | Check staff exist, verify business hours        |
+| Ollama error       | `docker-compose exec ollama ollama pull llama3` |
+| Import error       | `docker-compose restart backend`                |
 
 ## 📖 Full Docs
 
@@ -124,6 +131,7 @@ process_outreach(db: Session, log_to_file: bool) -> dict
 ## 💡 Usage Examples
 
 **Manual run with custom config:**
+
 ```python
 # Edit wellness_outreach.py temporarily
 LOOKAHEAD_DAYS = 14  # Search 2 weeks instead of 7
@@ -133,6 +141,7 @@ docker-compose exec backend python -m app.wellness_outreach
 ```
 
 **Schedule for 8 AM Mondays:**
+
 ```python
 # Edit wellness_scheduler.py
 SCHEDULE_DAY = "monday"
@@ -143,6 +152,7 @@ docker-compose exec backend python -m app.wellness_scheduler
 ```
 
 **Create test scenario:**
+
 ```python
 # Use test_wellness_outreach.py as template
 # Or manually create client with old booking
@@ -151,6 +161,7 @@ docker-compose exec backend python -m app.wellness_scheduler
 ---
 
 **Quick Links:**
+
 - Full Guide: [WELLNESS_OUTREACH_GUIDE.md](WELLNESS_OUTREACH_GUIDE.md)
 - Implementation Summary: [SPRINT_7_SUMMARY.md](SPRINT_7_SUMMARY.md)
 - Main README: [README.md](README.md)

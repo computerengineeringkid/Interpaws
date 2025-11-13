@@ -8,7 +8,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
-export default function AdminBookingList({ selectedDate }) {
+export default function AdminBookingList({ selectedDate, setCancellationSuggestions }) {
   const { token } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,6 +101,29 @@ export default function AdminBookingList({ selectedDate }) {
         }).catch(err => {
           console.error('Failed to log AI feedback:', err);
         });
+      }
+
+      // Sprint 8: Dynamic Slot-Filling - Get cancellation suggestions
+      if (newStatus === 'cancelled' && setCancellationSuggestions) {
+        try {
+          const suggestionsResponse = await fetch(`/api/admin/cancellation_suggestion/${bookingId}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (suggestionsResponse.ok) {
+            const suggestionsData = await suggestionsResponse.json();
+            
+            // Only show suggestions if there are any
+            if (suggestionsData.suggestions && suggestionsData.suggestions.length > 0) {
+              setCancellationSuggestions(suggestionsData);
+            }
+          }
+        } catch (err) {
+          // Fail silently - suggestions are optional
+          console.error('Failed to fetch cancellation suggestions:', err);
+        }
       }
     } catch (err) {
       setError('Failed to update booking status.');

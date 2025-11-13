@@ -14,11 +14,13 @@ The Wellness Outreach System is a proactive client engagement feature that autom
 ## Architecture
 
 ### File Location
+
 ```
 backend/app/wellness_outreach.py
 ```
 
 ### Dependencies
+
 - `app.database` - Database session management
 - `app.models` - SQLAlchemy models (Client, Pet, Booking, Preferences, Staff)
 - `app.ai_services` - Embedding generation and LLM integration
@@ -40,19 +42,23 @@ OUTREACH_LOG_FILE = "outreach_log.txt"
 ## How It Works
 
 ### 1. Pet Identification (`get_target_pets`)
+
 Queries the database to find pets that meet these criteria:
+
 - **No future bookings** scheduled
 - **AND** either:
   - No booking history, OR
   - Last booking was > 12 months ago
 
 ### 2. Slot Discovery (`find_open_slots`)
+
 - Searches the next 7 days (excluding weekends)
 - Checks hourly slots from 9 AM - 4 PM
 - Validates availability using existing `check_availability` logic
 - Returns slots with metadata: day name, time period (Morning/Afternoon)
 
 ### 3. Preference Matching (`match_slot_to_preference`)
+
 - Fetches client's `Preferences` record
 - If client has a `details_vector`:
   - Embeds each slot description (e.g., "Monday Morning")
@@ -62,7 +68,9 @@ Queries the database to find pets that meet these criteria:
   - Returns the first available slot
 
 ### 4. Email Generation (`generate_outreach_email`)
+
 Constructs a prompt with:
+
 - Pet name, species
 - Owner name
 - Suggested appointment time and veterinarian
@@ -70,7 +78,9 @@ Constructs a prompt with:
 Sends to Ollama LLM (`llama3`) to generate a warm, professional email. Includes fallback template if LLM fails.
 
 ### 5. Execution (`process_outreach`)
+
 Orchestrates the workflow:
+
 1. Identify target pets
 2. Find open slots
 3. For each pet:
@@ -85,11 +95,13 @@ Orchestrates the workflow:
 ### Manual Execution (Testing)
 
 From the Docker backend container:
+
 ```bash
 docker-compose exec backend python -m app.wellness_outreach
 ```
 
 Or directly in the container:
+
 ```bash
 docker-compose exec backend bash
 python -m app.wellness_outreach
@@ -98,6 +110,7 @@ python -m app.wellness_outreach
 ### As a Scheduled Job (Production)
 
 #### Option 1: Docker Cron
+
 Add to `docker-compose.yml` as a separate service:
 
 ```yaml
@@ -118,6 +131,7 @@ wellness-cron:
 This runs every Monday at 8 AM.
 
 #### Option 2: Host Cron
+
 Add to your host machine's crontab:
 
 ```bash
@@ -126,6 +140,7 @@ Add to your host machine's crontab:
 ```
 
 #### Option 3: Python Scheduler (Recommended for Dev)
+
 Create `backend/app/scheduler.py`:
 
 ```python
@@ -139,7 +154,7 @@ async def job():
 
 def run_scheduler():
     schedule.every().monday.at("08:00").do(lambda: asyncio.run(job()))
-    
+
     while True:
         schedule.run_pending()
         time.sleep(60)
@@ -153,6 +168,7 @@ Then run: `docker-compose exec backend python -m app.scheduler`
 ## Output
 
 ### Console Output
+
 ```
 🏥 Interpaws Wellness Outreach System
 ⏰ Run Time: 2025-11-13T10:30:00.000000
@@ -170,7 +186,7 @@ SUGGESTED SLOT: Monday, November 18 at 10:00 AM
 ================================================================================
 Dear John Doe,
 
-We hope this message finds you and Max doing well! It's been a while since 
+We hope this message finds you and Max doing well! It's been a while since
 Max's last visit, and we wanted to reach out to schedule a wellness check...
 
 [Email continues...]
@@ -188,6 +204,7 @@ Emails Generated: 3
 ```
 
 ### Log File Format
+
 The script appends to `backend/outreach_log.txt`:
 
 ```
@@ -269,17 +286,21 @@ print(f'Created test client {client.id} with pet {pet.id}')
 ```
 
 ### Run Script
+
 ```bash
 docker-compose exec backend python -m app.wellness_outreach
 ```
 
 ### Verify Output
+
 Check console output and `backend/outreach_log.txt` for generated emails.
 
 ## Integration with Existing System
 
 ### Database Schema
+
 Uses existing tables:
+
 - `clients` - Owner information
 - `pets` - Pet records
 - `bookings` - Appointment history
@@ -289,11 +310,14 @@ Uses existing tables:
 No new tables required.
 
 ### AI Services
+
 Reuses existing infrastructure:
+
 - `get_embedding()` - sentence-transformers for vector embeddings
 - `get_ollama_recommendation()` - Ollama/llama3 for email generation
 
 Ensure the Ollama container has the `llama3` model pulled:
+
 ```bash
 docker-compose exec ollama ollama pull llama3
 ```
@@ -301,15 +325,19 @@ docker-compose exec ollama ollama pull llama3
 ## Customization
 
 ### Email Tone
+
 Modify the prompt in `generate_outreach_email()` to adjust tone, length, or content.
 
 ### Search Window
+
 Adjust `LOOKAHEAD_DAYS` to search further ahead (e.g., 14 days).
 
 ### Business Hours
+
 Modify `BUSINESS_START_HOUR` and `BUSINESS_END_HOUR` for different clinic hours.
 
 ### Eligibility Criteria
+
 Change `LOOKBACK_MONTHS` or modify `get_target_pets()` logic for different criteria (e.g., only cats, or pets with specific conditions).
 
 ## Future Enhancements
@@ -324,16 +352,19 @@ Change `LOOKBACK_MONTHS` or modify `get_target_pets()` logic for different crite
 ## Troubleshooting
 
 ### "No available slots found"
+
 - Check if staff members exist in database
 - Verify `BUSINESS_START_HOUR` and `BUSINESS_END_HOUR` are correct
 - Ensure date range includes weekdays
 
 ### "Ollama connection failed"
+
 - Verify Ollama container is running: `docker-compose ps`
 - Check model is pulled: `docker-compose exec ollama ollama list`
 - Pull llama3: `docker-compose exec ollama ollama pull llama3`
 
 ### "No pets need outreach"
+
 - Normal if all pets have recent or future bookings
 - Create test data (see Testing section)
 - Adjust `LOOKBACK_MONTHS` to a smaller value for testing
@@ -341,6 +372,7 @@ Change `LOOKBACK_MONTHS` or modify `get_target_pets()` logic for different crite
 ## Support
 
 For issues or questions, refer to:
+
 - Main project docs: `README.md`, `QUICK_START.md`
 - Copilot instructions: `.github/copilot-instructions.md`
 - Backend API docs: http://localhost:8000/docs

@@ -492,6 +492,143 @@ def delete_booking(
     return {"ok": True}
 
 
+@app.get("/admin/cancellation_suggestion/{booking_id}", 
+         response_model=schemas.CancellationSuggestionResponse, 
+         tags=["Bookings", "Admin"])
+async def get_cancellation_suggestions(
+    booking_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get intelligent suggestions for filling a cancelled appointment slot.
+    
+    Sprint 8: Dynamic Slot-Filling
+    
+    When a booking is cancelled, this endpoint finds clients with later appointments
+    on the same day who might prefer the earlier (now available) slot based on their
+    preferences.
+    
+    Args:
+        booking_id: The ID of the cancelled booking
+        current_admin: Admin authentication
+        db: Database session
+        
+    Returns:
+        CancellationSuggestionResponse with top 3 candidate clients
+    """
+    # Fetch the cancelled booking
+    cancelled_booking = db.query(models.Booking).filter(
+        models.Booking.id == booking_id
+    ).first()
+    
+    if not cancelled_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    cancelled_slot_time = cancelled_booking.start_time
+    cancelled_date = cancelled_slot_time.date()
+    
+    # Determine time period of the cancelled slot
+    hour = cancelled_slot_time.hour
+    if hour < 12:
+        time_period = "morning"
+        time_description = "morning appointment"
+    elif hour < 17:
+        time_period = "afternoon"
+        time_description = "afternoon appointment"
+    else:
+        time_period = "evening"
+        time_description = "evening appointment"
+    
+    # Find candidate bookings: same day, later time, not cancelled
+    candidate_bookings = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.id != booking_id,  # Not the cancelled booking itself
+            cast(models.Booking.start_time, Date) == cancelled_date,  # Same day
+            models.Booking.start_time > cancelled_slot_time,  # Later time
+            models.Booking.status != "cancelled"  # Not already cancelled
+        )
+        .all()
+    )
+    
+    if not candidate_bookings:
+        # No candidates found - return empty suggestions
+        return schemas.CancellationSuggestionResponse(
+            cancelled_slot_time=cancelled_slot_time,
+            suggestions=[]
+        )
+    
+    # Generate embedding for "earlier appointment" concept
+    earlier_embedding = get_embedding(f"I prefer earlier appointments, especially {time_description}")
+    
+    suggestions = []
+    
+    for booking in candidate_bookings:
+        # Get client information
+        client = db.query(models.Client).filter(
+            models.Client.id == booking.client_id
+        ).first()
+        
+        if not client:
+            continue
+        
+        # Get client preferences
+        preference = db.query(models.Preferences).filter(
+            models.Preferences.client_id == client.id
+        ).first()
+        
+        # Calculate match score
+        match_score = 0.5  # Default score
+        reason = f"Has appointment at {booking.start_time.strftime('%I:%M %p')}, could move to {cancelled_slot_time.strftime('%I:%M %p')}"
+        
+        if preference and preference.details_vector is not None:
+            # Calculate L2 distance between preference and "earlier appointment" concept
+            # Lower distance = better match
+            distance = sum(
+                (a - b) ** 2 
+                for a, b in zip(preference.details_vector, earlier_embedding)
+            ) ** 0.5
+            
+            # Convert distance to score (0-1, where 1 is best match)
+            # Normalize: typical L2 distances are 0-2, so we invert and scale
+            match_score = max(0, min(1, 1 - (distance / 2)))
+            
+            # Enhanced reason based on preference text
+            if preference.details:
+                # Check for preference keywords
+                details_lower = preference.details.lower()
+                if any(word in details_lower for word in ['morning', 'early', 'am', 'earlier']):
+                    reason = f"Prefers {time_period} appointments (currently at {booking.start_time.strftime('%I:%M %p')})"
+                elif match_score > 0.7:
+                    reason = f"Strong preference match for earlier time (currently at {booking.start_time.strftime('%I:%M %p')})"
+        else:
+            # No preference vector, use time-based scoring
+            # Give higher score to bookings much later in the day
+            time_diff_hours = (booking.start_time - cancelled_slot_time).total_seconds() / 3600
+            match_score = min(1.0, time_diff_hours / 4)  # Cap at 1.0, scale by 4-hour difference
+        
+        suggestions.append(
+            schemas.CancellationSuggestion(
+                client_name=client.name,
+                client_email=client.email,
+                current_booking_id=booking.id,
+                current_booking_time=booking.start_time,
+                match_score=match_score,
+                reason=reason
+            )
+        )
+    
+    # Sort by match score (highest first) and take top 3
+    suggestions.sort(key=lambda x: x.match_score, reverse=True)
+    top_suggestions = suggestions[:3]
+    
+    return schemas.CancellationSuggestionResponse(
+        cancelled_slot_time=cancelled_slot_time,
+        suggestions=top_suggestions
+    )
+
+
 # ============================================
 # Preferences Endpoints
 # ============================================

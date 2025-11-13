@@ -175,7 +175,7 @@ def match_slot_to_preference(
         .first()
     )
     
-    if not preference or not preference.details_vector:
+    if not preference or preference.details_vector is None:
         # No preference or no vector, return first available slot
         return open_slots[0]
     

@@ -10,7 +10,7 @@
 
                                     │
                                     ▼
-                         
+
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  STEP 1: IDENTIFY TARGET PETS                                              │
 │  ─────────────────────────────────────────────────────────────────────────  │
@@ -332,6 +332,7 @@ wellness_outreach.py
 ```
 
 Key Points:
+
 - **Per-pet error isolation**: One failure doesn't stop the batch
 - **Graceful degradation**: LLM failure → fallback template
 - **Comprehensive logging**: All errors tracked in summary
@@ -340,6 +341,7 @@ Key Points:
 ---
 
 **Legend:**
+
 - `│ ▼ ─ └ ┌ ┐ ┘ ├ ┤ ┬ ┴ ┼` - Flow connectors
 - `┌─────┐` - Process/Component box
 - `◄ ►` - Data flow direction

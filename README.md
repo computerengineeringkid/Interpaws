@@ -494,21 +494,25 @@ The Wellness Outreach System (Sprint 7) proactively identifies pets due for care
 ### Quick Usage
 
 **Manual run:**
+
 ```bash
 ./run_wellness_outreach.sh
 ```
 
 **From Docker:**
+
 ```bash
 docker-compose exec backend python -m app.wellness_outreach
 ```
 
 **Run tests:**
+
 ```bash
 docker-compose exec backend python -m app.test_wellness_outreach
 ```
 
 **As a scheduler (continuous service):**
+
 ```bash
 docker-compose exec backend python -m app.wellness_scheduler
 ```
@@ -516,6 +520,7 @@ docker-compose exec backend python -m app.wellness_scheduler
 ### Output
 
 Generates personalized emails like:
+
 ```
 TO: john@example.com (John Doe)
 RE: Wellness Check for Max
@@ -523,7 +528,7 @@ SUGGESTED SLOT: Monday, November 18 at 10:00 AM
 
 Dear John Doe,
 
-We hope this message finds you and Max doing well! It's been a while 
+We hope this message finds you and Max doing well! It's been a while
 since Max's last visit, and we wanted to reach out...
 ```
 
@@ -532,6 +537,7 @@ Emails are logged to `backend/outreach_log.txt` for review.
 ### Documentation
 
 See **[WELLNESS_OUTREACH_GUIDE.md](WELLNESS_OUTREACH_GUIDE.md)** for:
+
 - Architecture details
 - Configuration options
 - Scheduling setup (cron/Docker)

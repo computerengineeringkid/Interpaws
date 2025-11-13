@@ -65,6 +65,36 @@ def get_db():
         db.close()
 
 
+def _clamp_score(value: float) -> float:
+    """Keep AI risk scores between 0 and 1."""
+    return max(0.0, min(1.0, value))
+
+
+def _derive_risk_level(score: float) -> str:
+    if score >= 0.7:
+        return "High"
+    if score >= 0.4:
+        return "Medium"
+    return "Low"
+
+
+def _extract_json_payload(raw: Optional[str]) -> Optional[dict]:
+    """Best-effort JSON extraction so we can recover from LLM formatting drift."""
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(raw[start:end + 1])
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
 # ============================================
 # Authentication Endpoints
 # ============================================
@@ -194,32 +224,7 @@ async def assess_booking_risk(
     current_admin: models.Staff = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Return an AI-backed risk score for a specific booking."""
-
-    def derive_risk_level(score: float) -> str:
-        if score >= 0.7:
-            return "High"
-        if score >= 0.4:
-            return "Medium"
-        return "Low"
-
-    def clamp_score(value: float) -> float:
-        return max(0.0, min(1.0, value))
-
-    def parse_llm_json(raw: str) -> Optional[dict]:
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            if not raw:
-                return None
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                try:
-                    return json.loads(raw[start:end + 1])
-                except json.JSONDecodeError:
-                    return None
-        return None
+    """Analyze historic behavior and have the LLM summarize cancellation risk."""
 
     booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
     if not booking:
@@ -244,6 +249,7 @@ async def assess_booking_risk(
         .scalar()
     ) or 0
 
+    cancellation_rate = (cancelled_bookings / total_bookings) if total_bookings else 0.0
     pet = db.query(models.Pet).filter(models.Pet.id == booking.pet_id).first()
     pet_species = pet.species if pet else "Unknown"
 
@@ -256,61 +262,65 @@ async def assess_booking_risk(
     if booking.complaint_reason and "surg" in booking.complaint_reason.lower():
         booking_type = "Surgery"
 
-    prompt = f"""Analyze this veterinary appointment cancellation risk and respond with JSON only.\n\nClient: {client.name}\nBooking ID: {booking.id}\nHistory: {cancelled_bookings} cancellations out of {total_bookings} bookings.\nBooking Type: {booking_type}\nLead Time (days): {lead_time_days:.1f}\nPet Species: {pet_species}\nAppointment Start: {booking.start_time.isoformat()}\n\nReturn valid JSON with keys risk_score (0-1 float), risk_level (Low/Medium/High), reasoning (concise sentence < 30 words)."""
+    prompt = f"""
+Client {client.name} has a {booking_type} booking on {booking.start_time:%B %d, %Y}.
+History: {cancelled_bookings} cancelled out of {total_bookings} total ({cancellation_rate:.0%}).
+Lead time: {lead_time_days:.1f} days. Pet species: {pet_species}.
+
+Instructions:
+- If the cancellation rate > 30% or the client has fewer than 2 total bookings, lean toward a higher risk assessment.
+- Respond ONLY with valid JSON like {{"risk_score": 0-1 float, "risk_level": "Low|Medium|High", "reasoning": "one sentence"}}.
+- Provide a concise reason (< 30 words) referencing the stats above.
+"""
 
     llm_payload = None
     try:
         llm_response = await get_ollama_recommendation(prompt)
-        llm_payload = parse_llm_json(llm_response)
+        llm_payload = _extract_json_payload(llm_response)
     except Exception:
         llm_payload = None
 
     if llm_payload:
         try:
-            risk_score = clamp_score(float(llm_payload.get("risk_score", 0.5)))
+            risk_score = _clamp_score(float(llm_payload.get("risk_score", 0.5)))
         except (TypeError, ValueError):
             risk_score = 0.5
 
-        provided_level = (llm_payload.get("risk_level") or "").strip().capitalize()
+        provided_level = (llm_payload.get("risk_level") or "").strip().title()
         if provided_level not in {"Low", "Medium", "High"}:
-            provided_level = derive_risk_level(risk_score)
+            provided_level = _derive_risk_level(risk_score)
 
-        reasoning = llm_payload.get("reasoning") or llm_payload.get("reason")
+        reasoning = (llm_payload.get("reasoning") or llm_payload.get("reason") or "").strip()
         if not reasoning:
-            reasoning = f"Historical cancellations: {cancelled_bookings}/{total_bookings}."
+            reasoning = f"{cancelled_bookings} of {total_bookings} past bookings cancelled."
 
         return schemas.RiskAssessment(
             risk_score=risk_score,
             risk_level=provided_level,
-            reasoning=reasoning.strip()
+            reasoning=reasoning
         )
 
-    # Fallback heuristic if AI output is unavailable or invalid
-    history_ratio = (cancelled_bookings / total_bookings) if total_bookings else 0.25
-    lead_factor = 0.25 if lead_time_days <= 2 else 0.1 if lead_time_days <= 5 else 0.05
+    # Heuristic fallback aligns with the same business rules as the LLM instructions
+    short_history_penalty = 0.15 if total_bookings < 2 else 0.0
+    rate_factor = cancellation_rate * 0.65
+    lead_factor = 0.25 if lead_time_days <= 2 else 0.12 if lead_time_days <= 5 else 0.05
     type_factor = 0.1 if booking_type == "Surgery" else 0.0
-    risk_score = clamp_score(history_ratio * 0.6 + lead_factor + type_factor)
+    risk_score = _clamp_score(rate_factor + short_history_penalty + lead_factor + type_factor)
 
-    if cancelled_bookings:
-        history_snippet = f"{cancelled_bookings}/{total_bookings} cancellations historically"
-    else:
-        history_snippet = "Consistent attendance history"
+    reason_bits = [
+        f"Cancellation rate {(cancellation_rate * 100):.0f}%",
+        "client history is thin" if total_bookings < 2 else "established client",
+    ]
 
     if lead_time_days <= 2:
-        lead_snippet = "short lead time"
-    elif lead_time_days <= 5:
-        lead_snippet = "moderate notice"
-    else:
-        lead_snippet = "booked well in advance"
-
-    reason_parts = [history_snippet, lead_snippet]
-    if booking_type == "Surgery":
-        reason_parts.append("surgery anxiety considered")
+        reason_bits.append("short-notice appointment")
+    elif booking_type == "Surgery":
+        reason_bits.append("surgery anxiety considered")
 
     return schemas.RiskAssessment(
         risk_score=risk_score,
-        risk_level=derive_risk_level(risk_score),
-        reasoning="; ".join(reason_parts)
+        risk_level=_derive_risk_level(risk_score),
+        reasoning="; ".join(reason_bits)
     )
 
 
@@ -434,6 +444,60 @@ def get_reschedule_options(
     candidate_slots.sort(key=lambda item: item["score"], reverse=True)
     top_slots = [entry["slot"] for entry in candidate_slots[:3]]
     return top_slots
+
+
+@app.put(
+    "/bookings/{booking_id}/client_reschedule",
+    response_model=schemas.Booking,
+    tags=["Bookings"],
+)
+def client_reschedule_booking(
+    booking_id: int,
+    request: schemas.ClientRescheduleRequest,
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Allow clients to apply one-click reschedule options safely."""
+
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this booking")
+    if booking.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Cancelled bookings cannot be rescheduled")
+
+    if request.end_time <= request.start_time:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+
+    now = datetime.utcnow()
+    if request.start_time <= now:
+        raise HTTPException(status_code=400, detail="Rescheduled slot must be in the future")
+
+    original_duration = (booking.end_time - booking.start_time).total_seconds()
+    new_duration = (request.end_time - request.start_time).total_seconds()
+    if abs(original_duration - new_duration) > 60:
+        raise HTTPException(status_code=400, detail="Reschedule duration must match the original appointment")
+
+    new_staff_id = request.staff_id or booking.staff_id
+    if not new_staff_id:
+        raise HTTPException(status_code=400, detail="A staff member must be specified")
+
+    staff_exists = db.query(models.Staff.id).filter(models.Staff.id == new_staff_id).first()
+    if not staff_exists:
+        raise HTTPException(status_code=404, detail="Selected staff member was not found")
+
+    if not check_availability(db, new_staff_id, request.start_time, request.end_time):
+        raise HTTPException(status_code=400, detail="That slot was just taken. Please pick another option.")
+
+    booking.start_time = request.start_time
+    booking.end_time = request.end_time
+    booking.staff_id = new_staff_id
+    booking.status = "confirmed"
+
+    db.commit()
+    db.refresh(booking)
+    return booking
 
 
 @app.post("/suggest_slots", response_model=schemas.SuggestionResponse)

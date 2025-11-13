@@ -85,7 +85,7 @@ export default function MyBookingsPage() {
     setOptionSubmitting(option.start_time);
     setRescheduleError(null);
     try {
-      const response = await fetch(`/api/bookings/${selectedBooking.id}`, {
+      const response = await fetch(`/api/bookings/${selectedBooking.id}/client_reschedule`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -94,6 +94,7 @@ export default function MyBookingsPage() {
         body: JSON.stringify({
           start_time: option.start_time,
           end_time: option.end_time,
+          staff_id: option.staff_id,
         }),
       });
 
@@ -210,6 +211,7 @@ export default function MyBookingsPage() {
               )}
               {optionsLoading ? (
                 <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">🤖 AI is finding the best slots for you...</p>
                   {[...Array(3)].map((_, idx) => (
                     <div key={idx} className="h-20 rounded-xl border bg-muted/30 animate-pulse" />
                   ))}
@@ -223,7 +225,7 @@ export default function MyBookingsPage() {
                       <div>
                         <p className="font-semibold">{new Date(option.start_time).toLocaleString()}</p>
                         <p className="text-xs text-muted-foreground">
-                          Staff #{option.staff_id} · Pref match {(option.preference_match ?? 0).toFixed(2)}
+                          {option.staff_name ? option.staff_name : `Staff #${option.staff_id}`} · Pref match {(option.preference_match ?? 0).toFixed(2)}
                         </p>
                         {option.reason && (
                           <p className="text-xs text-muted-foreground mt-1">{option.reason}</p>

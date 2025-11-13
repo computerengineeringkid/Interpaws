@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { format } from "date-fns/format";
+import { format } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function AdminBookingList({ selectedDate, setCancellationSuggestions }) {
   const { token } = useAuth();
@@ -98,17 +100,17 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
     const snapshot = riskSnapshots[bookingId];
     if (!snapshot) {
       return (
-        <span
-          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500 animate-pulse"
-          title="Loading risk..."
+        <Badge
+          variant="secondary"
+          className="animate-pulse"
           onMouseEnter={() => {
             if (!riskLoading[bookingId]) {
               fetchRisk(bookingId);
             }
           }}
         >
-          ...
-        </span>
+          …
+        </Badge>
       );
     }
 
@@ -128,17 +130,23 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
     };
 
     return (
-      <span
-        className={`rounded-full px-3 py-1 text-xs font-semibold ${palette[level] || palette.Unknown} animate-fade-in`}
-        title={`${level} Risk: ${reasoning}`}
-        onMouseEnter={() => {
-          if (!riskSnapshots[bookingId] && !riskLoading[bookingId]) {
-            fetchRisk(bookingId);
-          }
-        }}
-      >
-        {iconMap[level] || iconMap.Unknown} {level}
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            className={`${palette[level] || palette.Unknown} animate-fade-in`}
+            onMouseEnter={() => {
+              if (!riskSnapshots[bookingId] && !riskLoading[bookingId]) {
+                fetchRisk(bookingId);
+              }
+            }}
+          >
+            {iconMap[level] || iconMap.Unknown} {level}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-left">
+          {reasoning}
+        </TooltipContent>
+      </Tooltip>
     );
   };
 
@@ -228,11 +236,12 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Admin: Booking List</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <TooltipProvider>
+      <Card>
+        <CardHeader>
+          <CardTitle>Admin: Booking List</CardTitle>
+        </CardHeader>
+        <CardContent>
         {isLoading && <p>Loading...</p>}
         
         {error && <p className="text-red-500">{error}</p>}
@@ -290,7 +299,8 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
             </TableBody>
           </Table>
         )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   );
 }

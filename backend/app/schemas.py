@@ -53,6 +53,12 @@ class BookingUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class ClientRescheduleRequest(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    staff_id: Optional[int] = None
+
+
 class Booking(BookingBase):
     id: int
     status: str

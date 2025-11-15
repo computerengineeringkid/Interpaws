@@ -173,6 +173,10 @@ class AIFeedbackLog(AIFeedbackLogBase):
         from_attributes = True
 
 
+class AIFeedbackLogResponse(AIFeedbackLog):
+    message: str
+
+
 # Surgery Schemas
 class SurgeryBase(BaseModel):
     pet_id: int
@@ -203,6 +207,15 @@ class Surgery(SurgeryBase):
 
     class Config:
         from_attributes = True
+
+
+class SurgerySmartNotesRequest(BaseModel):
+    raw_transcript: str
+
+
+class SurgerySmartNotesResponse(BaseModel):
+    surgery_id: int
+    notes: str
 
 
 # Medication Schemas
@@ -263,6 +276,13 @@ class InventoryCheckItem(BaseModel):
 
 class InventoryCheckResponse(BaseModel):
     items: List[InventoryCheckItem]
+
+
+class InventoryForecastItem(BaseModel):
+    medication_name: str
+    current_stock: int
+    daily_usage: float
+    days_remaining: float
 
 
 # Cancellation Suggestion Schemas (Sprint 8: Dynamic Slot-Filling)

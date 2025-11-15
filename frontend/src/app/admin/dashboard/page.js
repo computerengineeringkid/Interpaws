@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 
 export default function AdminDashboardPage() {
   return (
@@ -17,8 +19,42 @@ export default function AdminDashboardPage() {
 }
 
 function AdminDashboardContent() {
+  const { token } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [cancellationSuggestions, setCancellationSuggestions] = useState(null);
+  const [forecastItems, setForecastItems] = useState([]);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState(null);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const fetchForecast = async () => {
+      setForecastLoading(true);
+      setForecastError(null);
+      try {
+        const response = await fetch("/api/admin/inventory/forecast", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch inventory forecast");
+        }
+
+        const data = await response.json();
+        setForecastItems(data);
+      } catch (err) {
+        setForecastError("Unable to load inventory forecast.");
+        console.error("Inventory forecast error:", err);
+      } finally {
+        setForecastLoading(false);
+      }
+    };
+
+    fetchForecast();
+  }, [token]);
 
   return (
     <main className="container mx-auto py-12 px-4">
@@ -101,6 +137,55 @@ function AdminDashboardContent() {
           setCancellationSuggestions={setCancellationSuggestions}
         />
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>📉 Inventory Forecast</CardTitle>
+          <CardDescription>Usage velocity for the last 30 days.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {forecastLoading && <p>Analyzing recent inventory usage...</p>}
+
+          {!forecastLoading && forecastError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{forecastError}</p>
+          )}
+
+          {!forecastLoading && !forecastError && forecastItems.length === 0 && (
+            <p className="text-sm text-zinc-600 dark:text-zinc-300">Inventory healthy.</p>
+          )}
+
+          {!forecastLoading && !forecastError && forecastItems.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Days Left</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {forecastItems.map((item, index) => {
+                  const urgent = item.days_remaining < 7;
+                  const formattedUsage = Number(item.daily_usage).toFixed(2);
+                  const formattedDays = Number(item.days_remaining).toFixed(1);
+                  return (
+                    <TableRow key={`${item.medication_name}-${index}`}>
+                      <TableCell>
+                        <div className="font-medium text-zinc-900 dark:text-zinc-100">{item.medication_name}</div>
+                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                          Stock: {item.current_stock} • {formattedUsage} / day
+                        </div>
+                      </TableCell>
+                      <TableCell className={`text-right text-sm ${urgent ? "text-red-600 dark:text-red-400 font-semibold" : "text-amber-600 dark:text-amber-400"}`}>
+                        {formattedDays} days
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </main>
   );
 }

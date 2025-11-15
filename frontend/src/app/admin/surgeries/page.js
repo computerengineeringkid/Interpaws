@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -25,6 +25,11 @@ function SurgeryManagementContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [editingSurgery, setEditingSurgery] = useState(null);
+  const recognitionRef = useRef(null);
+  const [listeningSurgeryId, setListeningSurgeryId] = useState(null);
+  const [dictationStatus, setDictationStatus] = useState(null);
+  const [dictationError, setDictationError] = useState(null);
+  const [isDictationProcessing, setIsDictationProcessing] = useState(false);
 
   // Inventory check state
   const [inventoryCheck, setInventoryCheck] = useState([]);
@@ -118,6 +123,23 @@ function SurgeryManagementContent() {
 
     checkInventory();
   }, [formData.surgery_type, token]);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!dictationStatus) return undefined;
+    const timer = setTimeout(() => setDictationStatus(null), 6000);
+    return () => clearTimeout(timer);
+  }, [dictationStatus]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -237,6 +259,86 @@ function SurgeryManagementContent() {
     }
   };
 
+  const handleDictateNotes = (surgeryId) => {
+    if (typeof window === "undefined") return;
+    if (!token) {
+      setDictationError("You must be logged in to dictate notes.");
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setDictationError("Speech recognition is not available in this browser.");
+      return;
+    }
+
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setListeningSurgeryId(surgeryId);
+      setDictationStatus(null);
+      setDictationError(null);
+      setIsDictationProcessing(false);
+    };
+
+    recognition.onerror = (event) => {
+      setListeningSurgeryId(null);
+      const friendlyError =
+        event.error === "not-allowed"
+          ? "Microphone access was denied. Please allow access and try again."
+          : "Unable to capture audio. Please try again.";
+      setDictationError(friendlyError);
+    };
+
+    recognition.onend = () => {
+      setListeningSurgeryId(null);
+      recognitionRef.current = null;
+    };
+
+    recognition.onresult = async (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (!transcript) {
+        setDictationError("No speech detected. Please try again.");
+        return;
+      }
+
+      setIsDictationProcessing(true);
+      try {
+        const response = await fetch(`/api/surgeries/${surgeryId}/smart_notes`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ raw_transcript: transcript }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to structure notes.");
+        }
+
+        const data = await response.json();
+        setDictationStatus(`Notes updated for surgery #${data.surgery_id}.`);
+        fetchSurgeries();
+      } catch (dictationErr) {
+        setDictationError(dictationErr.message || "Unable to update notes.");
+      } finally {
+        setIsDictationProcessing(false);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
   return (
     <main className="container mx-auto py-12 px-4">
       <h1 className="text-4xl font-bold mb-6 text-zinc-900 dark:text-zinc-50">
@@ -246,6 +348,33 @@ function SurgeryManagementContent() {
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
+        </div>
+      )}
+
+      {listeningSurgeryId && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-2 rounded mb-4">
+          🎧 Listening for surgery #{listeningSurgeryId}...
+        </div>
+      )}
+
+      {isDictationProcessing && (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 px-4 py-2 rounded mb-4">
+          ✨ Structuring notes with AI...
+        </div>
+      )}
+
+      {dictationStatus && (
+        <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-2 rounded mb-4">
+          {dictationStatus}
+        </div>
+      )}
+
+      {dictationError && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded mb-4 flex items-center justify-between gap-4">
+          <span>{dictationError}</span>
+          <Button variant="ghost" size="sm" onClick={() => setDictationError(null)}>
+            Dismiss
+          </Button>
         </div>
       )}
 
@@ -465,35 +594,55 @@ function SurgeryManagementContent() {
                         <TableHead>Type</TableHead>
                         <TableHead>Pet ID</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Notes</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {surgeries.map((surgery) => (
-                        <TableRow key={surgery.id}>
-                          <TableCell>{surgery.surgery_type}</TableCell>
-                          <TableCell>{surgery.pet_id}</TableCell>
-                          <TableCell>{surgery.status}</TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleEdit(surgery)}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleDelete(surgery.id)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {surgeries.map((surgery) => {
+                        const truncatedNotes = surgery.notes
+                          ? `${surgery.notes.slice(0, 120)}${
+                              surgery.notes.length > 120 ? "…" : ""
+                            }`
+                          : "—";
+
+                        return (
+                          <TableRow key={surgery.id}>
+                            <TableCell>{surgery.surgery_type}</TableCell>
+                            <TableCell>{surgery.pet_id}</TableCell>
+                            <TableCell>{surgery.status}</TableCell>
+                            <TableCell className="max-w-xs whitespace-pre-line text-sm text-zinc-600 dark:text-zinc-300">
+                              {truncatedNotes}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleDictateNotes(surgery.id)}
+                                  disabled={Boolean(listeningSurgeryId) || isDictationProcessing}
+                                >
+                                  🎤 Dictate Notes
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleEdit(surgery)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleDelete(surgery.id)}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

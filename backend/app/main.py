@@ -1,7 +1,8 @@
 import json
 import time
+from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
@@ -989,41 +990,71 @@ async def get_my_preferences(
 # AI Feedback Loop Endpoints
 # ============================================
 
-@app.post("/log-feedback/", response_model=schemas.AIFeedbackLog, tags=["AI Feedback"])
+@app.post("/log-feedback/", response_model=schemas.AIFeedbackLogResponse, tags=["AI Feedback"])
 async def log_ai_feedback(
     booking_id: int,
     current_admin: models.Staff = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
-    Log successful booking match for AI feedback loop.
-    
-    This endpoint records when a booking is successfully completed,
-    capturing the complaint vector and staff skills vector for future AI training.
+    Log successful booking match for AI feedback loop and update staff skills online.
     """
-    # Fetch the booking
     booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
-    # Fetch the staff member
+
+    if not booking.status or booking.status.lower() != "completed":
+        raise HTTPException(status_code=400, detail="Booking must be marked as completed before logging feedback")
+
     staff = db.query(models.Staff).filter(models.Staff.id == booking.staff_id).first()
     if not staff:
         raise HTTPException(status_code=404, detail="Staff member not found")
-    
-    # Create feedback log entry
+
+    complaint_vector = list(booking.complaint_vector) if booking.complaint_vector is not None else None
+    if complaint_vector is None and booking.complaint_reason:
+        complaint_vector = get_embedding(booking.complaint_reason)
+        booking.complaint_vector = complaint_vector
+
+    vector_updated = False
+    message = "Feedback logged; staff vector unchanged (no complaint context available)."
+
+    if complaint_vector is not None:
+        current_skills_vector = (
+            list(staff.skills_vector)
+            if staff.skills_vector is not None else complaint_vector
+        )
+
+        if len(current_skills_vector) == len(complaint_vector):
+            new_vector = [
+                (current_value * 0.95) + (complaint_value * 0.05)
+                for current_value, complaint_value in zip(current_skills_vector, complaint_vector)
+            ]
+            staff.skills_vector = new_vector
+            vector_updated = True
+        else:
+            message = "Feedback logged; vector dimensions mismatch prevented an update."
+
     feedback_log = models.AIFeedbackLog(
         booking_id=booking.id,
         staff_id=staff.id,
         client_complaint_vector=booking.complaint_vector,
         staff_skills_vector=staff.skills_vector
     )
-    
+
     db.add(feedback_log)
     db.commit()
     db.refresh(feedback_log)
-    
-    return feedback_log
+    db.refresh(staff)
+
+    if vector_updated:
+        message = "Staff vector updated via online learning."
+
+    return schemas.AIFeedbackLogResponse(
+        id=feedback_log.id,
+        booking_id=feedback_log.booking_id,
+        staff_id=feedback_log.staff_id,
+        message=message
+    )
 
 
 # ============================================
@@ -1122,6 +1153,40 @@ def check_surgery_inventory(
     return schemas.InventoryCheckResponse(items=items)
 
 
+@app.post("/surgeries/{surgery_id}/smart_notes", response_model=schemas.SurgerySmartNotesResponse, tags=["Surgeries"])
+async def generate_smart_surgery_notes(
+    surgery_id: int,
+    smart_notes_request: schemas.SurgerySmartNotesRequest,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Use AI to convert dictated notes into structured surgery notes."""
+    surgery = db.query(models.Surgery).filter(models.Surgery.id == surgery_id).first()
+    if not surgery:
+        raise HTTPException(status_code=404, detail="Surgery not found")
+
+    raw_transcript = smart_notes_request.raw_transcript.strip()
+    if not raw_transcript:
+        raise HTTPException(status_code=400, detail="raw_transcript cannot be empty")
+
+    prompt = (
+        "You are a veterinary scribe. Convert this raw dictation into structured notes "
+        "(Vitals, Meds Administered, Observations). Raw text: "
+        f"{raw_transcript}."
+    )
+
+    try:
+        structured_notes = await get_ollama_recommendation(prompt)
+    except Exception as exc:  # noqa: BLE001 - surface LLM failures cleanly
+        raise HTTPException(status_code=503, detail="Unable to generate smart notes at this time") from exc
+
+    surgery.notes = structured_notes
+    db.commit()
+    db.refresh(surgery)
+
+    return schemas.SurgerySmartNotesResponse(surgery_id=surgery.id, notes=structured_notes)
+
+
 @app.put("/surgeries/{surgery_id}", response_model=schemas.Surgery, tags=["Surgeries"])
 def update_surgery(
     surgery_id: int,
@@ -1179,6 +1244,70 @@ def delete_surgery(
     db.delete(db_surgery)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/admin/inventory/forecast", response_model=List[schemas.InventoryForecastItem], tags=["Medications", "Admin"])
+def get_inventory_forecast(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Predict low inventory items based on recent surgery consumption."""
+    window_days = 30
+    cutoff_date = datetime.utcnow() - timedelta(days=window_days)
+
+    completed_surgeries = (
+        db.query(models.Surgery)
+        .filter(models.Surgery.start_time >= cutoff_date)
+        .filter(models.Surgery.status.isnot(None))
+        .filter(func.lower(models.Surgery.status) == "completed")
+        .all()
+    )
+
+    if not completed_surgeries:
+        return []
+
+    links_by_type: Dict[str, List[models.SurgeryInventoryLink]] = defaultdict(list)
+    for link in db.query(models.SurgeryInventoryLink).all():
+        links_by_type[link.surgery_type].append(link)
+
+    usage_totals: Dict[int, int] = defaultdict(int)
+    for surgery in completed_surgeries:
+        for link in links_by_type.get(surgery.surgery_type, []):
+            usage_totals[link.medication_id] += link.required_quantity
+
+    if not usage_totals:
+        return []
+
+    medications = (
+        db.query(models.Medication)
+        .filter(models.Medication.id.in_(list(usage_totals.keys())))
+        .all()
+    )
+
+    forecast_items: List[schemas.InventoryForecastItem] = []
+    for medication in medications:
+        total_used = usage_totals.get(medication.id, 0)
+        if total_used <= 0:
+            continue
+
+        daily_usage = total_used / window_days
+        if daily_usage <= 0:
+            continue
+
+        days_remaining = medication.stock_quantity / daily_usage if daily_usage else float("inf")
+
+        if days_remaining < 14:
+            forecast_items.append(
+                schemas.InventoryForecastItem(
+                    medication_name=medication.name,
+                    current_stock=medication.stock_quantity,
+                    daily_usage=round(daily_usage, 2),
+                    days_remaining=round(days_remaining, 1)
+                )
+            )
+
+    forecast_items.sort(key=lambda item: item.days_remaining)
+    return forecast_items
 
 
 # ============================================

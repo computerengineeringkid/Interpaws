@@ -162,10 +162,10 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
               </Select>
             </div>
             <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="complaint">Reason for Visit (e.g., 'limping on front paw')</Label>
+              <Label htmlFor="complaint">Reason for Visit (e.g., &lsquo;limping on front paw&rsquo;)</Label>
               <Textarea
                 id="complaint"
-                placeholder="Tell us what's wrong..."
+                placeholder="Tell us what&rsquo;s wrong..."
                 value={complaint}
                 onChange={(e) => setComplaint(e.target.value)}
               />

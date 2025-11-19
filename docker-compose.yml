@@ -23,6 +23,8 @@ services:
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/interpawsdb
       OLLAMA_HOST: http://ollama:11434
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENDGRID_FROM_EMAIL: "no-reply@interpaws.com"
     volumes:
       - ./backend/app:/code/app
     ports:

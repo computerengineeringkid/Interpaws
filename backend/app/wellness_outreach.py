@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 from .database import SessionLocal
 from .models import Client, Pet, Booking, Preferences, Staff
@@ -201,8 +203,8 @@ def match_slot_to_preference(
 
 
 async def generate_outreach_email(
-    pet: Pet, 
-    client: Client, 
+    pet: Pet,
+    client: Client,
     slot: dict
 ) -> str:
     """
@@ -253,6 +255,40 @@ Looking forward to seeing you both soon!
 
 Best regards,
 The Interpaws Team"""
+
+
+async def send_wellness_email(
+    client_name: str,
+    client_email: str,
+    pet_name: str,
+    html_content: str,
+) -> None:
+    """Send a wellness outreach email using SendGrid.
+
+    Args:
+        client_name: Name of the client
+        client_email: Client email address
+        pet_name: Name of the pet
+        html_content: Email body in HTML
+    """
+    api_key = os.getenv("SENDGRID_API_KEY")
+    from_email = os.getenv("SENDGRID_FROM_EMAIL")
+
+    if not api_key or not from_email:
+        raise ValueError("SendGrid configuration is missing")
+
+    message = Mail(
+        from_email=from_email,
+        to_emails=client_email,
+        subject=f"A wellness update for {pet_name} from Interpaws",
+        html_content=html_content,
+    )
+
+    try:
+        sg = SendGridAPIClient(api_key)
+        await asyncio.to_thread(sg.send, message)
+    except Exception as e:
+        raise e
 
 
 async def process_outreach(db: Session, log_to_file: bool = True) -> dict:
@@ -309,7 +345,20 @@ async def process_outreach(db: Session, log_to_file: bool = True) -> dict:
             
             # Generate email
             email_content = await generate_outreach_email(pet, client, best_slot)
-            
+
+            try:
+                await send_wellness_email(
+                    client_name=client.name,
+                    client_email=client.email,
+                    pet_name=pet.name,
+                    html_content=email_content,
+                )
+            except Exception as e:
+                error_msg = f"Failed to send email to {client.email}: {e}"
+                print(f"⚠️  {error_msg}")
+                summary["errors"].append(error_msg)
+                continue
+
             email_record = {
                 "client_email": client.email,
                 "client_name": client.name,

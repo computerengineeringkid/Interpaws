@@ -1,80 +1,99 @@
 #!/bin/bash
 
-# Interpaws Application Startup Script
-# Days 12-14: Admin UI Integration & E2E Testing
+# Interpaws Smart Startup Script
+# Usage: ./start.sh [--rebuild]
 
-echo "🚀 Starting Interpaws Application..."
-echo "=================================="
+echo -e "\033[0;34m╔════════════════════════════════════════════════════════════════╗\033[0m"
+echo -e "\033[0;34m║                   Interpaws VPMS Launcher                      ║\033[0m"
+echo -e "\033[0;34m╚════════════════════════════════════════════════════════════════╝\033[0m"
 
+# 1. PRE-FLIGHT CHECKS
+# -----------------------------------------------------------
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
-    echo "❌ Error: Docker is not running"
-    echo "Please start Docker Desktop and try again"
+    echo -e "\033[0;31m❌ Error: Docker is not running.\033[0m"
+    echo "   Please start Docker Desktop and try again."
     exit 1
 fi
 
-# Navigate to project directory
-cd "$(dirname "$0")"
-
-echo "📦 Building and starting containers..."
-docker-compose up --build -d
-
-echo ""
-echo "⏳ Waiting for services to be ready..."
-echo "   - Database: Initializing..."
-echo "   - Backend: Running migrations..."
-echo "   - Frontend: Building Next.js app..."
-echo "   - Ollama: Loading AI models..."
-
-# Wait for backend to be healthy
-echo ""
-echo "Checking backend health..."
-for i in {1..30}; do
-    if curl -s http://localhost:8000/ > /dev/null 2>&1; then
-        echo "✅ Backend is ready!"
-        break
+# Check for Port Conflict (Ollama)
+# This prevents the "bind: address already in use" crash
+if lsof -Pi :11434 -sTCP:LISTEN -t >/dev/null ; then
+    echo -e "\033[0;33m⚠️  Warning: Port 11434 is already in use.\033[0m"
+    echo "   This is usually the local Ollama desktop app."
+    echo "   It will block the Docker AI service."
+    echo ""
+    read -p "   Do you want to attempt to close it automatically? (y/n) " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        pkill ollama
+        echo "   ✅ Ollama app closed."
+    else
+        echo "   ❌ Cannot proceed with port conflict. Exiting."
+        exit 1
     fi
-    echo "   Waiting... ($i/30)"
-    sleep 2
-done
+fi
 
-# Wait for frontend to be healthy
-echo ""
-echo "Checking frontend health..."
-for i in {1..30}; do
-    if curl -s http://localhost:3000/ > /dev/null 2>&1; then
-        echo "✅ Frontend is ready!"
-        break
-    fi
-    echo "   Waiting... ($i/30)"
-    sleep 2
-done
+# 2. STARTUP LOGIC
+# -----------------------------------------------------------
+BUILD_FLAG=""
+
+# Check for rebuild argument
+if [[ "$1" == "--rebuild" ]]; then
+    echo -e "\n\033[0;33m🔄 Rebuild requested. This will take a minute...\033[0m"
+    BUILD_FLAG="--build"
+else
+    echo -e "\n\033[0;32m⚡ Fast-start mode enabled.\033[0m"
+    echo "   (Use './start.sh --rebuild' if you installed new packages)"
+fi
+
+echo "📦 Orchestrating containers..."
+# We assume the .env file is creating the necessary environment variables
+# If not, we export the dummy keys just in case to prevent crash
+if [ -z "$SENDGRID_API_KEY" ]; then
+    export SENDGRID_API_KEY="mock_key_autogen"
+    export SENDGRID_FROM_EMAIL="mock@interpaws.com"
+fi
+
+docker-compose up -d $BUILD_FLAG
+
+# 3. HEALTH CHECKS
+# -----------------------------------------------------------
+echo -e "\n⏳ Waiting for services..."
+
+check_service() {
+    local url=$1
+    local name=$2
+    local max_retries=30
+    
+    echo -n "   - Checking $name..."
+    for i in $(seq 1 $max_retries); do
+        if curl -s --head "$url" >/dev/null; then
+            echo -e " \033[0;32mOnline! ✅\033[0m"
+            return 0
+        fi
+        sleep 1
+    done
+    echo -e " \033[0;31mTimed Out ❌\033[0m"
+    return 1
+}
+
+# Verify Backend and Frontend
+check_service "http://localhost:8000/docs" "Backend API"
+BACKEND_STATUS=$?
+
+check_service "http://localhost:3000" "Frontend UI"
+FRONTEND_STATUS=$?
 
 echo ""
-echo "=================================="
-echo "✅ Interpaws Application is running!"
-echo "=================================="
+if [ $BACKEND_STATUS -eq 0 ] && [ $FRONTEND_STATUS -eq 0 ]; then
+    echo -e "\033[0;32m✅ SYSTEM OPERATIONAL\033[0m"
+    echo "----------------------------------"
+    echo "💻 Client: http://localhost:3000"
+    echo "🛡️  Admin:  http://localhost:3000/admin/admin-login"
+    echo "⚙️  API:    http://localhost:8000/docs"
+else
+    echo -e "\033[0;31m⚠️  SYSTEM PARTIALLY FAILED\033[0m"
+    echo "   Run 'docker-compose logs backend' to debug."
+fi
 echo ""
-echo "📱 Access the application:"
-echo "   • Frontend: http://localhost:3000"
-echo "   • Backend API: http://localhost:8000"
-echo "   • API Docs: http://localhost:8000/docs"
-echo ""
-echo "👤 Client Access:"
-echo "   • Login: http://localhost:3000/login"
-echo "   • Portal: http://localhost:3000"
-echo ""
-echo "👨‍⚕️ Admin Access:"
-echo "   • Login: http://localhost:3000/admin/admin-login"
-echo "   • Dashboard: http://localhost:3000/admin/dashboard"
-echo "   • Staff Management: http://localhost:3000/admin/staff"
-echo "   • Surgeries: http://localhost:3000/admin/surgeries"
-echo "   • Medications: http://localhost:3000/admin/medications"
-echo ""
-echo "📝 Next Steps:"
-echo "   1. Create an admin account (see E2E_TESTING_GUIDE.md)"
-echo "   2. Follow the testing guide for comprehensive testing"
-echo "   3. Check logs: docker-compose logs -f"
-echo ""
-echo "🛑 To stop: docker-compose down"
-echo "=================================="

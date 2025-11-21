@@ -14,6 +14,7 @@ from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCr
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
+from .agent import InterpawsAgent
 from .auth import (
     get_password_hash,
     authenticate_client,
@@ -683,6 +684,15 @@ Please answer the user's question using the context provided. Be helpful, friend
     
     result_text = await get_ollama_recommendation(enhanced_prompt)
     return ChatResponse(response=result_text)
+
+
+@app.post("/agent/chat", response_model=ChatResponse, tags=["AI Chat"])
+async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
+    """Agentic ReAct chat endpoint using tool calls for factual answers."""
+    agent = InterpawsAgent(db)
+    context = f"User context: complaint details - {request.complaint_text}"
+    response_text = await agent.chat(request.prompt, context=context)
+    return ChatResponse(response=response_text)
 
 
 # Staff Endpoints

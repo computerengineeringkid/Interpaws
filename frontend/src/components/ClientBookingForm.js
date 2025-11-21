@@ -34,7 +34,6 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   const [error, setError] = useState(null);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
   const [bookingError, setBookingError] = useState(null);
 
   const handleSubmit = async (e) => {
@@ -87,10 +86,19 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
       if (!token) {
         throw new Error('No authentication token found');
       }
+
+      const startDate = new Date(startTime);
+      if (Number.isNaN(startDate.getTime())) {
+        throw new Error('Please select a valid start time');
+      }
+
+      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      const pad = (value) => value.toString().padStart(2, '0');
+      const calculatedEndTime = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
       
       const requestBody = {
         start_time: startTime,
-        end_time: endTime,
+        end_time: calculatedEndTime,
         pet_id: parseInt(petId),
         staff_id: parseInt(selectedStaff)
       };
@@ -247,21 +255,12 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
                     onChange={(e) => setStartTime(e.target.value)}
                   />
                 </div>
-                <div className="flex flex-col space-y-1.5">
-                  <Label htmlFor="endTime">End Time</Label>
-                  <Input
-                    id="endTime"
-                    type="datetime-local"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                  />
-                </div>
               </div>
               <Button 
                 onClick={handleBookAppointment} 
                 type="button" 
                 className="mt-4"
-                disabled={!petId || !selectedStaff || !startTime || !endTime}
+                disabled={!petId || !selectedStaff || !startTime}
               >
                 Book Appointment
               </Button>

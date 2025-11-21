@@ -30,7 +30,7 @@ def get_embedding(text: str) -> list[float]:
 
 async def get_ollama_recommendation(prompt: str) -> str:
     """
-    Get a recommendation from Ollama using the llama3 model.
+    Get a recommendation from Ollama using the qwen3:8b model.
     
     This is a placeholder function to ensure the Ollama connection works.
     
@@ -41,7 +41,7 @@ async def get_ollama_recommendation(prompt: str) -> str:
         The model's response as a string.
     """
     response = await ollama_client.chat(
-        model="llama3",
+        model="qwen3:8b",
         messages=[
             {
                 "role": "user",
@@ -50,4 +50,3 @@ async def get_ollama_recommendation(prompt: str) -> str:
         ],
     )
     return response["message"]["content"]
-

@@ -21,23 +21,31 @@ class AgentTools:
 
     def find_staff(self, query: str) -> List[Dict[str, Any]]:
         """Find the top two staff members by semantic similarity to the query."""
-        embedding = get_embedding(query)
-        staff_results = (
-            self.db.query(models.Staff)
-            .order_by(models.Staff.skills_vector.l2_distance(embedding))
-            .limit(2)
-            .all()
-        )
+        try:
+            embedding = get_embedding(query)
+            staff_results = (
+                self.db.query(models.Staff)
+                .order_by(models.Staff.skills_vector.l2_distance(embedding))
+                .limit(2)
+                .all()
+            )
 
-        return [
-            {"id": staff.id, "name": staff.name, "role": staff.role}
-            for staff in staff_results
-        ]
+            return [
+                {"id": staff.id, "name": staff.name, "role": staff.role}
+                for staff in staff_results
+            ]
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "message": f"Failed to find staff: {exc}"}
 
     def check_schedule(self, staff_id: int, date_str: str, time_str: str) -> Dict[str, str]:
         """Check if a staff member is available at a given date and time."""
         try:
-            start_time = datetime.fromisoformat(f"{date_str} {time_str}")
+            try:
+                start_time = datetime.strptime(
+                    f"{date_str} {time_str}", "%Y-%m-%d %H:%M"
+                )
+            except ValueError:
+                start_time = datetime.fromisoformat(f"{date_str} {time_str}")
         except ValueError:
             return {"status": "error", "message": "Invalid date or time format."}
 

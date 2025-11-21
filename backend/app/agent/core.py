@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.ai_services import get_ollama_recommendation
 from .tools import AgentTools, serialize_tool_output
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT_TEMPLATE = """
 You are Interpaws, a veterinary support agent that can reason and use tools.
+Today's date and time (including day of week): {current_date}
 
 Available tools and their required JSON signatures:
 - find_staff: {"tool": "find_staff", "args": {"query": "skill or complaint description"}}
@@ -37,7 +39,10 @@ class InterpawsAgent:
         if context:
             history.append({"role": "system", "content": context})
 
-        history.append({"role": "system", "content": SYSTEM_PROMPT})
+        current_date = datetime.now().strftime("%A, %B %d, %Y %H:%M")
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(current_date=current_date)
+
+        history.append({"role": "system", "content": system_prompt})
         history.append({"role": "user", "content": user_message})
 
         for _ in range(self.max_turns):
@@ -46,7 +51,9 @@ class InterpawsAgent:
             tool_call = self._parse_tool_call(llm_response)
 
             if tool_call:
+                print(f"Agent Action: {tool_call}")
                 tool_result = self._execute_tool(tool_call)
+                print(f"Tool Result: {tool_result}")
                 history.append({"role": "assistant", "content": llm_response})
                 history.append({"role": "assistant", "content": f"Tool Output: {serialize_tool_output(tool_result)}"})
                 continue

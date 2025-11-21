@@ -28,25 +28,36 @@ def get_embedding(text: str) -> list[float]:
     return embedding.tolist()
 
 
-async def get_ollama_recommendation(prompt: str) -> str:
+async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str:
     """
-    Get a recommendation from Ollama using the qwen3:8b model.
-    
+    Get a recommendation from Ollama using the qwen2.5:7b model.
+
     This is a placeholder function to ensure the Ollama connection works.
-    
+
     Args:
         prompt: The prompt to send to the model.
-    
+        json_mode: If True, request the response in JSON format.
+
     Returns:
-        The model's response as a string.
+        The model's response as a string, or an error message if the service
+        is unreachable.
     """
-    response = await ollama_client.chat(
-        model="qwen3:8b",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-    )
-    return response["message"]["content"]
+    chat_options = {}
+    if json_mode:
+        chat_options["format"] = "json"
+
+    try:
+        response = await ollama_client.chat(
+            model="qwen2.5:7b",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            **chat_options,
+        )
+    except Exception:
+        return "Sorry, I'm having trouble connecting to the AI service right now. Please try again later."
+
+    return response.get("message", {}).get("content", "")

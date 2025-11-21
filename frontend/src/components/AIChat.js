@@ -79,7 +79,7 @@ const AIChat = forwardRef(({ complaint }, ref) => {
     setPrompt("");
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 

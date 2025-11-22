@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import Date, cast, text, func, desc
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import get_embedding, get_ollama_recommendation
 from .agent import InterpawsAgent
+from .agent.tools import AgentTools
 from .auth import (
     get_password_hash,
     authenticate_client,
@@ -24,6 +25,7 @@ from .auth import (
     get_current_admin_user,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
+from .service_catalog import get_service_duration_minutes, infer_service_type
 
 app = FastAPI()
 
@@ -95,6 +97,45 @@ def _extract_json_payload(raw: Optional[str]) -> Optional[dict]:
             except json.JSONDecodeError:
                 return None
     return None
+
+
+def _normalize_slots(tool_output: Optional[dict]) -> List[schemas.SuggestedSlot]:
+    if not isinstance(tool_output, dict):
+        return []
+
+    raw_slots = tool_output.get("slots") or tool_output.get("available_slots")
+    if not raw_slots:
+        return []
+
+    normalized: List[schemas.SuggestedSlot] = []
+    for slot in raw_slots:
+        try:
+            start_raw = slot.get("start_time")
+            end_raw = slot.get("end_time")
+            if isinstance(start_raw, str):
+                start_time = datetime.fromisoformat(start_raw)
+            else:
+                start_time = start_raw
+            if isinstance(end_raw, str):
+                end_time = datetime.fromisoformat(end_raw)
+            else:
+                end_time = end_raw
+            if not start_time or not end_time:
+                continue
+            normalized.append(
+                schemas.SuggestedSlot(
+                    start_time=start_time,
+                    end_time=end_time,
+                    staff_id=slot.get("staff_id") or 0,
+                    staff_name=slot.get("staff_name"),
+                    preference_match=slot.get("preference_match"),
+                    reason=slot.get("reason"),
+                )
+            )
+        except Exception:
+            continue
+
+    return normalized
 
 
 # ============================================
@@ -169,6 +210,59 @@ async def get_current_client(current_user: models.Client = Depends(get_current_u
 # Booking Endpoints
 # ============================================
 
+
+# ============================================
+# Pet Endpoints
+# ============================================
+
+
+@app.get("/pets/me", response_model=List[schemas.Pet], tags=["Pets"])
+def get_my_pets(
+    name: Optional[str] = Query(None, description="Filter by pet name"),
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Pet).filter(models.Pet.client_id == current_user.id)
+    if name:
+        query = query.filter(models.Pet.name.ilike(f"%{name}%"))
+    pets = query.order_by(models.Pet.name.asc()).all()
+    return pets
+
+
+@app.post("/pets/", response_model=schemas.Pet, tags=["Pets"])
+def create_pet(
+    pet: schemas.PetCreate,
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    existing = (
+        db.query(models.Pet)
+        .filter(
+            models.Pet.client_id == current_user.id,
+            func.lower(models.Pet.name) == pet.name.lower(),
+        )
+        .all()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "You already have a pet with that name. Please use a unique name or clarify the pet you want to manage.",
+                "pet_ids": [p.id for p in existing],
+            },
+        )
+
+    db_pet = models.Pet(
+        name=pet.name,
+        species=pet.species or "Unknown",
+        breed=pet.breed or "",
+        client_id=current_user.id,
+    )
+    db.add(db_pet)
+    db.commit()
+    db.refresh(db_pet)
+    return db_pet
+
 @app.post("/bookings", response_model=schemas.Booking)
 async def create_booking(booking: schemas.BookingCreate, current_user: models.Client = Depends(get_current_user), db: Session = Depends(get_db)):
     # Check if the staff member is available during the requested time
@@ -186,6 +280,58 @@ async def create_booking(booking: schemas.BookingCreate, current_user: models.Cl
         client_id=current_user.id,
         pet_id=booking.pet_id,
         staff_id=booking.staff_id
+    )
+    db.add(db_booking)
+    db.commit()
+    db.refresh(db_booking)
+    return db_booking
+
+
+@app.post("/bookings/by-name", response_model=schemas.Booking, tags=["Bookings"])
+async def create_booking_by_name(
+    request: schemas.BookingByNameCreate,
+    current_user: models.Client = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    pets = (
+        db.query(models.Pet)
+        .filter(models.Pet.client_id == current_user.id, models.Pet.name.ilike(f"%{request.pet_name}%"))
+        .all()
+    )
+    if not pets:
+        raise HTTPException(status_code=404, detail="Pet not found for this account")
+    if len(pets) > 1:
+        raise HTTPException(status_code=400, detail="Multiple pets match that name. Please clarify which pet to book.")
+
+    pet = pets[0]
+    service_type, _ = infer_service_type(request.complaint_reason or request.service_type, request.service_type)
+    duration_minutes = get_service_duration_minutes(service_type)
+    start_time = request.preferred_time
+    end_time = start_time + timedelta(minutes=duration_minutes)
+
+    staff_search_text = f"{service_type}: {request.complaint_reason or request.service_type}".strip()
+    staff_matches = AgentTools(db).find_staff(staff_search_text)
+    if isinstance(staff_matches, dict):
+        raise HTTPException(status_code=400, detail=staff_matches.get("message", "Unable to find staff for that service."))
+
+    chosen_staff = None
+    for candidate in staff_matches:
+        staff_id = candidate.get("id")
+        if staff_id and check_availability(db, staff_id, start_time, end_time):
+            chosen_staff = candidate
+            break
+
+    if not chosen_staff:
+        raise HTTPException(status_code=400, detail="No staff available for that time. Please pick another slot.")
+
+    db_booking = models.Booking(
+        start_time=start_time,
+        end_time=end_time,
+        client_id=current_user.id,
+        pet_id=pet.id,
+        staff_id=chosen_staff["id"],
+        complaint_reason=request.complaint_reason or service_type,
+        status="confirmed",
     )
     db.add(db_booking)
     db.commit()
@@ -691,8 +837,21 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     """Agentic ReAct chat endpoint using tool calls for factual answers."""
     agent = InterpawsAgent(db)
     context = f"User context: complaint details - {request.complaint_text}"
-    response_text = await agent.chat(request.prompt, context=context)
-    return ChatResponse(response=response_text)
+    agent_result = await agent.chat(request.prompt, context=context)
+
+    if isinstance(agent_result, dict):
+        slots = _normalize_slots(agent_result.get("tool_output"))
+        service_type = None
+        tool_output = agent_result.get("tool_output")
+        if isinstance(tool_output, dict):
+            service_type = tool_output.get("service_type")
+        return ChatResponse(
+            response=agent_result.get("response", ""),
+            slots=slots or None,
+            service_type=service_type,
+        )
+
+    return ChatResponse(response=str(agent_result))
 
 
 # Staff Endpoints

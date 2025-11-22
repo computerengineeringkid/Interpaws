@@ -1,80 +1,48 @@
 "use client";
 
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const AIChat = forwardRef(({ complaint }, ref) => {
+const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete }, ref) => {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [triageInitiated, setTriageInitiated] = useState(false);
+  const [activeContext, setActiveContext] = useState(null);
 
-  // Expose getChatHistory method to parent component via ref
   useImperativeHandle(ref, () => ({
-    getChatHistory: () => {
-      // Return formatted chat history as a single string
-      return messages.map(m => `${m.role === 'user' ? 'Client' : 'AI'}: ${m.content}`).join('\n');
-    }
+    getChatHistory: () => messages.map((m) => `${m.role === "user" ? "Client" : "AI"}: ${m.content}`).join("\n"),
   }));
 
-  // Auto-trigger triage when complaint changes
   useEffect(() => {
-    async function initiateTriage() {
-      // Only trigger if we have a complaint, messages are empty, and we haven't initiated triage yet
-      if (complaint && complaint.trim() && messages.length === 0 && !triageInitiated) {
-        setTriageInitiated(true);
-        setIsLoading(true);
+    if (!startSignal) return;
+    if (!context || !context.complaint?.trim()) return;
 
-        try {
-          const res = await fetch("/api/chat/triage", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ complaint_text: complaint }),
-          });
+    setMessages([]);
+    setActiveContext(context);
+    const initialPrompt = `Owner: ${context.ownerName}. Pet: ${context.petName}. Complaint: ${context.complaint}. Infer the service type and propose bookable appointment slots.`;
+    sendPrompt(initialPrompt, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startSignal]);
 
-          if (!res.ok) {
-            throw new Error(`Request failed with status ${res.status}`);
-          }
-
-          const result = await res.json();
-          const aiMessage = { role: "ai", content: result.response };
-          setMessages([aiMessage]);
-        } catch (err) {
-          const errorMessage = { role: "ai", content: "Sorry, I couldn't start the triage process. Please try again." };
-          setMessages([errorMessage]);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    initiateTriage();
-  }, [complaint, messages.length, triageInitiated]);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!prompt.trim()) return;
-
+  const sendPrompt = async (text, skipUserEcho = false) => {
+    if (!text.trim()) return;
     setIsLoading(true);
 
-    // Add user message immediately
-    const userMessage = { role: "user", content: prompt };
-    setMessages((prev) => [...prev, userMessage]);
-
-    // Clear input
-    setPrompt("");
+    if (!skipUserEcho) {
+      const userMessage = { role: "user", content: text };
+      setMessages((prev) => [...prev, userMessage]);
+    }
 
     try {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          prompt: userMessage.content,
-          complaint_text: complaint || "No initial complaint provided"
+        body: JSON.stringify({
+          prompt: text,
+          complaint_text: activeContext?.complaint || context?.complaint || "No complaint provided",
         }),
       });
 
@@ -83,7 +51,12 @@ const AIChat = forwardRef(({ complaint }, ref) => {
       }
 
       const result = await res.json();
-      const aiMessage = { role: "ai", content: result.response };
+      const aiMessage = {
+        role: "ai",
+        content: result.response,
+        slots: result.slots || [],
+        serviceType: result.service_type,
+      };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (err) {
       const errorMessage = { role: "ai", content: "Sorry, I couldn't process that. Please try again." };
@@ -91,7 +64,65 @@ const AIChat = forwardRef(({ complaint }, ref) => {
     } finally {
       setIsLoading(false);
     }
-  }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await sendPrompt(prompt);
+    setPrompt("");
+  };
+
+  const handleSlotSelection = async (slot, serviceTypeHint) => {
+    if (!activeContext) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", content: "Please start the chat with your pet details before booking." },
+      ]);
+      return;
+    }
+
+    if (!token) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", content: "Please log in to book this slot." },
+      ]);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/bookings/by-name", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          owner_name: activeContext?.ownerName,
+          pet_name: activeContext?.petName,
+          service_type: serviceTypeHint || "urgent care",
+          preferred_time: slot.start_time,
+          complaint_reason: activeContext?.complaint,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "Booking failed" }));
+        throw new Error(error.detail || "Booking failed");
+      }
+
+      const confirmation = await response.json();
+      const message = `Booked ${activeContext?.petName} on ${new Date(confirmation.start_time).toLocaleString()}.`;
+      setMessages((prev) => [...prev, { role: "ai", content: message }]);
+      if (onBookingComplete) {
+        onBookingComplete(message);
+      }
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", content: err.message || "Unable to book that slot." },
+      ]);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -100,18 +131,14 @@ const AIChat = forwardRef(({ complaint }, ref) => {
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-10">
               <p className="text-lg font-medium mb-2">👋 Welcome to Interpaws!</p>
-              <p>I'm your AI Veterinary Intake Coordinator.</p>
-              <p className="mt-2">Tell me how I can help your pet today (e.g., "My dog has a cough").</p>
+              <p>I&apos;m your AI Veterinary Intake Coordinator.</p>
+              <p className="mt-2">Tell me how I can help your pet today (e.g., &quot;My dog has a cough&quot;).</p>
             </div>
           ) : (
             messages.map((m, idx) => (
               <div
                 key={idx}
-                className={
-                  m.role === "user"
-                    ? "flex justify-end"
-                    : "flex justify-start"
-                }
+                className={m.role === "user" ? "flex justify-end" : "flex justify-start"}
               >
                 <div
                   className={
@@ -121,6 +148,21 @@ const AIChat = forwardRef(({ complaint }, ref) => {
                   }
                 >
                   {m.content}
+                  {m.slots && m.slots.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {m.slots.map((slot, slotIdx) => (
+                        <Button
+                          key={`${slot.start_time}-${slotIdx}`}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSlotSelection(slot, m.serviceType)}
+                        >
+                          {new Date(slot.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          {slot.staff_name ? ` • ${slot.staff_name}` : ""}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))

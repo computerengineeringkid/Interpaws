@@ -3,6 +3,25 @@ from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
 
+# Pet Schemas
+class PetBase(BaseModel):
+    name: str
+    species: Optional[str] = None
+    breed: Optional[str] = None
+
+
+class PetCreate(PetBase):
+    pass
+
+
+class Pet(PetBase):
+    id: int
+    client_id: int
+
+    class Config:
+        from_attributes = True
+
+
 # Client Schemas
 class ClientBase(BaseModel):
     name: str
@@ -45,6 +64,14 @@ class BookingCreate(BaseModel):
     end_time: datetime
     pet_id: int
     staff_id: int
+
+
+class BookingByNameCreate(BaseModel):
+    owner_name: str
+    pet_name: str
+    service_type: str
+    preferred_time: datetime
+    complaint_reason: Optional[str] = None
 
 
 class BookingUpdate(BaseModel):
@@ -132,6 +159,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    slots: Optional[List[SuggestedSlot]] = None
+    service_type: Optional[str] = None
 
 
 class SmartChatRequest(BaseModel):

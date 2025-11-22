@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Navigation from "@/components/Navigation";
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
@@ -13,7 +14,10 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 export default function AdminDashboardPage() {
   return (
     <AdminProtectedRoute>
-      <AdminDashboardContent />
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <AdminDashboardContent />
+      </div>
     </AdminProtectedRoute>
   );
 }

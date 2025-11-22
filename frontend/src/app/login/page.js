@@ -34,7 +34,7 @@ export default function LoginPage() {
       }
 
       if (result.success) {
-        router.push("/my-bookings");
+        router.push("/");
       } else {
         setError(result.error || "Authentication failed");
       }

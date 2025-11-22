@@ -207,7 +207,8 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   return (
     <Card className="w-full max-w-4xl mx-auto shadow-lg">
       <CardHeader className="border-b bg-zinc-50 dark:bg-zinc-900">
-        <CardTitle className="text-2xl text-center">Veterinary Intake Coordinator</CardTitle>
+        <CardTitle className="text-2xl text-center">Book an Appointment</CardTitle>
+        <p className="text-center text-sm text-gray-600 mt-2">Use our AI assistant to quickly find the perfect appointment slot</p>
       </CardHeader>
       <CardContent className="p-0">
         {!token && (

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import Navigation from '@/components/Navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -73,8 +74,11 @@ export default function PreferencesPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="container mx-auto py-8">
-          <p>Loading your preferences...</p>
+        <div className="min-h-screen bg-gray-50">
+          <Navigation />
+          <div className="container mx-auto py-8 px-4">
+            <p>Loading your preferences...</p>
+          </div>
         </div>
       </ProtectedRoute>
     );
@@ -82,9 +86,11 @@ export default function PreferencesPage() {
 
   return (
     <ProtectedRoute>
-      <div className="container mx-auto py-8">
-        <h1 className="text-3xl font-bold mb-6">My Preferences</h1>
-        <Card>
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="container mx-auto py-8 px-4">
+          <h1 className="text-3xl font-bold mb-6">My Preferences</h1>
+          <Card>
           <CardHeader>
             <CardTitle>Booking Preferences</CardTitle>
           </CardHeader>
@@ -107,6 +113,7 @@ export default function PreferencesPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       </div>
     </ProtectedRoute>
   );

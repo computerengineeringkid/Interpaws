@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import Navigation from '@/components/Navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -116,8 +117,11 @@ export default function MyBookingsPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <div className="container mx-auto py-8">
-          <p>Loading your bookings...</p>
+        <div className="min-h-screen bg-gray-50">
+          <Navigation />
+          <div className="container mx-auto py-8 px-4">
+            <p>Loading your bookings...</p>
+          </div>
         </div>
       </ProtectedRoute>
     );
@@ -125,16 +129,25 @@ export default function MyBookingsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="container mx-auto py-8">
-        <h1 className="text-3xl font-bold mb-6">My Bookings</h1>
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 animate-fade-in">
-            {error}
-          </div>
-        )}
-        {bookings.length === 0 ? (
-          <p>You have no bookings yet.</p>
-        ) : (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="container mx-auto py-8 px-4">
+          <h1 className="text-3xl font-bold mb-6">My Bookings</h1>
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 animate-fade-in">
+              {error}
+            </div>
+          )}
+          {bookings.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-gray-600 mb-4">You have no bookings yet.</p>
+                <Button onClick={() => window.location.href = '/'}>
+                  Book Your First Appointment
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
           <div className="grid gap-4">
             {bookings.map((booking) => (
               <Card key={booking.id} className="shadow-sm transition hover:shadow-lg animate-fade-in">
@@ -190,6 +203,7 @@ export default function MyBookingsPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
       {rescheduleModalOpen && selectedBooking && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 animate-fade-in">

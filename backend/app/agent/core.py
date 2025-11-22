@@ -56,7 +56,9 @@ class InterpawsAgent:
         prior_history: Optional[List[Dict[str, str]]] = None,
         client_email: Optional[str] = None,
         *,
-        complaint_text: Optional[str] = None
+        complaint_text: Optional[str] = None,
+        pet_name: Optional[str] = None,
+        owner_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """Run the ReAct reasoning loop with conversation memory."""
         current_date = datetime.now().strftime("%A, %B %d, %Y %H:%M")
@@ -75,7 +77,12 @@ class InterpawsAgent:
             if patterns:
                 pattern_context = f"\\n\\nUsual: {patterns}"
         
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(current_date=current_date) + pattern_context
+        # Persistent Context Pattern: inject known entities every turn to avoid amnesia
+        context_block = ""
+        if pet_name or owner_name:
+            context_block = f"\n\nKNOWN ENTITIES:\n- Pet Name: {pet_name or 'Unknown'}\n- Owner Name: {owner_name or 'Unknown'}"
+
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(current_date=current_date) + pattern_context + context_block
         
         if context:
             conversation_history.append({"role": "context", "content": context})

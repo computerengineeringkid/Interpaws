@@ -169,6 +169,9 @@ class SmartChatRequest(BaseModel):
     session_id: Optional[str] = None
     conversation_history: Optional[List[Dict[str, str]]] = None
     client_email: Optional[str] = None  # For pattern learning
+    # Persistent Context Pattern
+    pet_name: Optional[str] = None
+    owner_name: Optional[str] = None
 
 
 # Preferences Schemas

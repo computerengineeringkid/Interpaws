@@ -43,6 +43,9 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
         body: JSON.stringify({
           prompt: text,
           complaint_text: activeContext?.complaint || context?.complaint || "No complaint provided",
+          // Persistent Context Pattern: send pet and owner every turn
+          pet_name: activeContext?.petName,
+          owner_name: activeContext?.ownerName,
         }),
       });
 

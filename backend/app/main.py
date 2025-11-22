@@ -880,6 +880,9 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
             prior_history=request.conversation_history,
             client_email=request.client_email,
             complaint_text=request.complaint_text,
+            # Persistent Context Pattern: forward known entity names
+            pet_name=request.pet_name,
+            owner_name=request.owner_name,
         )
 
         if isinstance(agent_result, dict):

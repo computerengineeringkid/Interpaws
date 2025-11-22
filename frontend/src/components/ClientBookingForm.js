@@ -30,6 +30,8 @@ const serviceOptions = [
   { value: "dental cleaning", label: "Dental Cleaning" },
 ];
 
+const BOOKINGS_BY_NAME_ENDPOINT = "/api/bookings/by-name"; // Avoid trailing slash to prevent 307 redirects
+
 export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }) {
   const { userRole, logout, token, user } = useContext(AuthContext);
   const router = useRouter();
@@ -117,7 +119,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/bookings/by-name", {
+      const response = await fetch(BOOKINGS_BY_NAME_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -75,7 +75,7 @@ Constructs a prompt with:
 - Owner name
 - Suggested appointment time and veterinarian
 
-Sends to Ollama LLM (`llama3`) to generate a warm, professional email. Includes fallback template if LLM fails.
+Sends to Ollama LLM (`qwen2.5:7b`) to generate a warm, professional email. Includes fallback template if LLM fails.
 
 ### 5. Execution (`process_outreach`)
 
@@ -314,12 +314,12 @@ No new tables required.
 Reuses existing infrastructure:
 
 - `get_embedding()` - sentence-transformers for vector embeddings
-- `get_ollama_recommendation()` - Ollama/llama3 for email generation
+- `get_ollama_recommendation()` - Ollama/qwen2.5:7b for email generation
 
-Ensure the Ollama container has the `llama3` model pulled:
+Ensure the Ollama container has the `qwen2.5:7b` model pulled:
 
 ```bash
-docker-compose exec ollama ollama pull llama3
+docker-compose exec ollama ollama pull qwen2.5:7b
 ```
 
 ## Customization
@@ -361,7 +361,7 @@ Change `LOOKBACK_MONTHS` or modify `get_target_pets()` logic for different crite
 
 - Verify Ollama container is running: `docker-compose ps`
 - Check model is pulled: `docker-compose exec ollama ollama list`
-- Pull llama3: `docker-compose exec ollama ollama pull llama3`
+- Pull qwen2.5:7b: `docker-compose exec ollama ollama pull qwen2.5:7b`
 
 ### "No pets need outreach"
 

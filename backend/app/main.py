@@ -244,6 +244,7 @@ def get_my_pets(
     current_user: models.Client = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # STRICT FILTERING
     query = db.query(models.Pet).filter(models.Pet.client_id == current_user.id)
     if name:
         query = query.filter(models.Pet.name.ilike(f"%{name}%"))
@@ -287,6 +288,13 @@ def create_pet(
 
 @app.post("/bookings", response_model=schemas.Booking)
 async def create_booking(booking: schemas.BookingCreate, current_user: models.Client = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Verify pet ownership
+    pet = db.query(models.Pet).filter(models.Pet.id == booking.pet_id).first()
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+    if pet.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to book for this pet")
+
     # Check if the staff member is available during the requested time
     is_available = check_availability(db, booking.staff_id, booking.start_time, booking.end_time)
     
@@ -774,7 +782,9 @@ Ask one or two clarifying questions to get more details. Consider questions abou
 - Is your pet eating and drinking normally?
 - Has there been any recent change in behavior or environment?
 
-Be friendly, concise, and professional. Ask the most relevant questions based on the complaint."""
+Be friendly, concise, and professional. Ask the most relevant questions based on the complaint.
+
+IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."""
     
     ai_response = await get_ollama_recommendation(triage_prompt)
     return ChatResponse(response=ai_response)
@@ -848,7 +858,9 @@ These staff members have successfully handled similar complaints in the past.
     enhanced_prompt += f"""
 User's Question: {request.prompt}
 
-Please answer the user's question using the context provided. Be helpful, friendly, and concise."""
+Please answer the user's question using the context provided. Be helpful, friendly, and concise.
+
+IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."""
     
     result_text = await get_ollama_recommendation(enhanced_prompt)
     return ChatResponse(response=result_text)
@@ -859,7 +871,7 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     """Agentic ReAct chat endpoint with conversation memory and pattern learning."""
     try:
         agent = InterpawsAgent(db)
-        context = f"User context: complaint details - {request.complaint_text}"
+        context = f"User context: complaint details - {request.complaint_text}. IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."
 
         agent_result = await agent.chat(
             request.prompt,

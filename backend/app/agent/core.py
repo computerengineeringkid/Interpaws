@@ -198,12 +198,12 @@ class InterpawsAgent:
         """Retry the LLM with an explicit JSON-only correction prompt."""
         correction_prompt = (
             f"{prompt}\n\nRespond ONLY with a single JSON object containing keys: "
-            "action, action_input, and optional thought. No prose or code fences."
+            "action, action_input, and optional thought. No prose or code fences. JSON only."
         )
         retry_response = await get_ollama_recommendation(
             correction_prompt,
             json_mode=False,
-            temperature=0.6,
+            temperature=0.8,
         )
         print(f"Retry response: {retry_response[:200]}...")
         return self._parse_agent_decision(retry_response)

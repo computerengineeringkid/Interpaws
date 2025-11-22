@@ -1,5 +1,5 @@
 #!/bin/sh
-set -euo pipefail
+set -eu
 
 MODEL_ID=${OLLAMA_MODEL_ID:-"llama3"}
 

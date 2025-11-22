@@ -16,15 +16,6 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check for Port Conflict (Ollama)
-# Host port 11435 is used to avoid clashing with local Ollama desktop instances
-if lsof -Pi :11435 -sTCP:LISTEN -t >/dev/null ; then
-    echo -e "\033[0;33m⚠️  Warning: Port 11435 is already in use.\033[0m"
-    echo "   The bundled Ollama container needs this port."
-    echo "   Please free it (or update the port mapping) before continuing."
-    exit 1
-fi
-
 # 2. STARTUP LOGIC
 # -----------------------------------------------------------
 BUILD_FLAG=""
@@ -49,10 +40,17 @@ fi
 docker-compose up -d $BUILD_FLAG
 
 # Ensure the standard model is present
-echo -e "\n🤖 Pulling standard Ollama model (llama3)..."
-if ! docker-compose exec ollama ollama pull llama3; then
-    echo -e "\033[0;33m⚠️  Warning: Unable to pull llama3 automatically.\033[0m"
-    echo "   Please run 'docker-compose exec ollama ollama pull llama3' manually after containers are healthy."
+echo -e "\n🤖 Checking for local Ollama model (llama3)..."
+if command -v ollama >/dev/null 2>&1; then
+    if ! ollama list | grep -q "llama3"; then
+        echo "   Pulling llama3 locally..."
+        ollama pull llama3
+    else
+        echo "   Local llama3 model found."
+    fi
+else
+    echo -e "\033[0;33m⚠️  Warning: 'ollama' command not found on host.\033[0m"
+    echo "   Please install Ollama (https://ollama.com) and run 'ollama pull llama3' manually."
 fi
 
 # 3. HEALTH CHECKS

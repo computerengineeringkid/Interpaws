@@ -23,7 +23,7 @@ export default function AdminDashboardPage() {
 }
 
 function AdminDashboardContent() {
-  const { token } = useAuth();
+  const { adminToken } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [cancellationSuggestions, setCancellationSuggestions] = useState(null);
   const [forecastItems, setForecastItems] = useState([]);
@@ -31,7 +31,7 @@ function AdminDashboardContent() {
   const [forecastError, setForecastError] = useState(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!adminToken) return;
 
     const fetchForecast = async () => {
       setForecastLoading(true);
@@ -39,7 +39,7 @@ function AdminDashboardContent() {
       try {
         const response = await fetch("/api/admin/inventory/forecast", {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${adminToken}`,
           },
         });
 
@@ -58,7 +58,7 @@ function AdminDashboardContent() {
     };
 
     fetchForecast();
-  }, [token]);
+  }, [adminToken]);
 
   return (
     <main className="container mx-auto py-12 px-4">

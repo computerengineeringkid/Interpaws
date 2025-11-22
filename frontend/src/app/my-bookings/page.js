@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export default function MyBookingsPage() {
-  const { token } = useAuth();
+  const { clientToken } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -24,7 +24,7 @@ export default function MyBookingsPage() {
       try {
         const response = await fetch('/api/bookings/me', {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${clientToken}`,
           },
         });
         if (response.ok) {
@@ -41,10 +41,10 @@ export default function MyBookingsPage() {
       }
     };
 
-    if (token) {
+    if (clientToken) {
       fetchBookings();
     }
-  }, [token]);
+  }, [clientToken]);
 
   const openRescheduleModal = async (booking) => {
     setSelectedBooking(booking);
@@ -55,7 +55,7 @@ export default function MyBookingsPage() {
     try {
       const response = await fetch(`/api/bookings/${booking.id}/reschedule_options`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${clientToken}`,
         },
       });
 
@@ -90,7 +90,7 @@ export default function MyBookingsPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${clientToken}`,
         },
         body: JSON.stringify({
           start_time: option?.start_time,

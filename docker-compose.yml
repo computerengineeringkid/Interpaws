@@ -59,8 +59,10 @@ services:
     volumes:
       - ollama_data:/root/.ollama
       - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
+    environment:
+      OLLAMA_MODEL_ID: llama3
     healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q 'qwen2.5:7b'"]
+      test: ["CMD-SHELL", "ollama list | grep -q \"${OLLAMA_MODEL_ID}\""]
       interval: 10s
       timeout: 5s
       retries: 10

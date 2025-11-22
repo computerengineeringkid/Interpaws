@@ -88,7 +88,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
     if (!petName.trim()) return;
     setStatus(null);
     try {
-      const response = await fetch("/api/pets/", {
+      const response = await fetch("/api/pets", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

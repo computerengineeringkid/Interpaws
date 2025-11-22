@@ -229,7 +229,7 @@ def get_my_pets(
     return pets
 
 
-@app.post("/pets/", response_model=schemas.Pet, tags=["Pets"])
+@app.post("/pets", response_model=schemas.Pet, tags=["Pets"])
 def create_pet(
     pet: schemas.PetCreate,
     current_user: models.Client = Depends(get_current_user),

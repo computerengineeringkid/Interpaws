@@ -339,15 +339,6 @@ async def create_booking_by_name(
     return db_booking
 
 
-@app.get("/bookings/{date}", response_model=List[schemas.Booking])
-async def get_bookings_for_date(date: date, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
-    return (
-        db.query(models.Booking)
-        .filter(cast(models.Booking.start_time, Date) == date)
-        .all()
-    )
-
-
 @app.get("/bookings/me", response_model=List[schemas.Booking], tags=["Bookings"])
 async def get_my_bookings(
     current_user: models.Client = Depends(get_current_user),
@@ -358,6 +349,15 @@ async def get_my_bookings(
         db.query(models.Booking)
         .filter(models.Booking.client_id == current_user.id)
         .order_by(models.Booking.start_time.desc())
+        .all()
+    )
+
+
+@app.get("/bookings/{date}", response_model=List[schemas.Booking])
+async def get_bookings_for_date(date: date, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    return (
+        db.query(models.Booking)
+        .filter(cast(models.Booking.start_time, Date) == date)
         .all()
     )
 

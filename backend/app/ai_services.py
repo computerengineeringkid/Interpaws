@@ -8,10 +8,10 @@ import asyncio
 # Initialize the embedding model once as a global instance to be reused
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"  # Back to 7B - more reliable even if slower
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"  # Stabilized single-model policy
 
-# Get Ollama host from environment
-ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+# Get Ollama host from environment, defaulting to the internal service name
+ollama_host = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 
 # Initialize async Ollama client
 ollama_client = ollama.AsyncClient(host=ollama_host)
@@ -31,7 +31,12 @@ def get_embedding(text: str) -> list[float]:
     return embedding.tolist()
 
 
-async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str:
+async def get_ollama_recommendation(
+    prompt: str,
+    json_mode: bool = False,
+    *,
+    temperature: float = 0.3,
+) -> str:
     """
     Get a recommendation from Ollama using the standard qwen2.5:7b model.
 
@@ -61,7 +66,7 @@ async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str
                 ],
                 options={
                     "num_ctx": 2048,  # Smaller context window = faster
-                    "temperature": 0.3,  # Lower temp = faster, more deterministic
+                    "temperature": temperature,  # Lower temp = faster, more deterministic
                     "num_predict": 512,  # Allow longer responses for reasoning
                 },
                 keep_alive="5m",  # Keep model loaded for faster subsequent calls

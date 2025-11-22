@@ -53,9 +53,9 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
       const result = await res.json();
       const aiMessage = {
         role: "ai",
-        content: result.response,
-        slots: result.slots || [],
-        serviceType: result.service_type,
+        content: result?.response ?? "",
+        slots: result?.slots ?? [],
+        serviceType: result?.service_type,
       };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (err) {
@@ -111,7 +111,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
       }
 
       const confirmation = await response.json();
-      const message = `Booked ${activeContext?.petName} on ${new Date(confirmation.start_time).toLocaleString()}.`;
+      const message = `Booked ${activeContext?.petName} on ${confirmation?.start_time ? new Date(confirmation.start_time).toLocaleString() : "the scheduled time"}.`;
       setMessages((prev) => [...prev, { role: "ai", content: message }]);
       if (onBookingComplete) {
         onBookingComplete(message);
@@ -148,19 +148,23 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
                   }
                 >
                   {m.content}
-                  {m.slots && m.slots.length > 0 && (
+                  {m?.slots && m.slots.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {m.slots.map((slot, slotIdx) => (
-                        <Button
-                          key={`${slot.start_time}-${slotIdx}`}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleSlotSelection(slot, m.serviceType)}
-                        >
-                          {new Date(slot.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                          {slot.staff_name ? ` • ${slot.staff_name}` : ""}
-                        </Button>
-                      ))}
+                      {m.slots.map((slot, slotIdx) => {
+                        const slotStart = slot?.start_time;
+                        if (!slotStart) return null;
+                        return (
+                          <Button
+                            key={`${slotStart}-${slotIdx}`}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSlotSelection(slot, m?.serviceType)}
+                          >
+                            {new Date(slotStart).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                            {slot?.staff_name ? ` • ${slot.staff_name}` : ""}
+                          </Button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

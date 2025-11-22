@@ -33,11 +33,11 @@ const serviceOptions = [
 const BOOKINGS_BY_NAME_ENDPOINT = "/api/bookings/by-name"; // Avoid trailing slash to prevent 307 redirects
 
 export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }) {
-  const { userRole, logout, token, user } = useContext(AuthContext);
+  const { userRole, isAdmin, logout, clientToken, clientUser } = useContext(AuthContext);
   const router = useRouter();
 
   const [bookingMode, setBookingMode] = useState("ai");
-  const [ownerName, setOwnerName] = useState(user?.name || "");
+  const [ownerName, setOwnerName] = useState(clientUser?.name || "");
   const [petName, setPetName] = useState("");
   const [petOptions, setPetOptions] = useState([]);
   const [petLoading, setPetLoading] = useState(false);
@@ -48,14 +48,14 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (user?.name) {
-      setOwnerName(user.name);
+    if (clientUser?.name) {
+      setOwnerName(clientUser.name);
     }
-  }, [user]);
+  }, [clientUser]);
 
   useEffect(() => {
     let active = true;
-    if (!token || !petName.trim()) {
+    if (!clientToken || !petName.trim()) {
       setPetOptions([]);
       return undefined;
     }
@@ -65,7 +65,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
       try {
         const response = await fetch(`/api/pets/me?name=${encodeURIComponent(petName)}`, {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${clientToken}`,
           },
         });
         if (!response.ok) throw new Error("Failed to search pets");
@@ -82,13 +82,13 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
     return () => {
       active = false;
     };
-  }, [petName, token]);
+  }, [petName, clientToken]);
 
   const handleCreatePet = async () => {
     if (!petName.trim()) return;
     setStatus(null);
     
-    if (!token) {
+    if (!clientToken) {
       setStatus({ type: "error", message: "Please log in to create a pet profile." });
       return;
     }
@@ -98,7 +98,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${clientToken}`,
         },
         body: JSON.stringify({ name: petName, species: "Unknown", breed: "" }),
       });
@@ -109,8 +109,8 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
       }
 
       const newPet = await response.json();
-      setPetOptions([newPet]);
-      setStatus({ type: "success", message: `Added ${newPet.name} to your account.` });
+      setPetOptions(newPet ? [newPet] : []);
+      setStatus({ type: "success", message: `Added ${newPet?.name || "your pet"} to your account.` });
     } catch (err) {
       setStatus({ type: "error", message: err.message });
     }
@@ -129,7 +129,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${clientToken}`,
         },
         body: JSON.stringify({
           owner_name: ownerName,
@@ -146,7 +146,8 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
       }
 
       const booking = await response.json();
-      setStatus({ type: "success", message: `Appointment booked for ${petName} on ${new Date(booking.start_time).toLocaleString()}.` });
+      const startTime = booking?.start_time ? new Date(booking.start_time).toLocaleString() : "the scheduled time";
+      setStatus({ type: "success", message: `Appointment booked for ${petName} on ${startTime}.` });
     } catch (err) {
       setStatus({ type: "error", message: err.message });
     } finally {
@@ -211,7 +212,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
         <p className="text-center text-sm text-gray-600 mt-2">Use our AI assistant to quickly find the perfect appointment slot</p>
       </CardHeader>
       <CardContent className="p-0">
-        {!token && (
+        {!clientToken && (
           <div className="bg-red-50 border-l-4 border-red-500 text-red-800 p-4 m-4" role="alert">
             <p className="font-bold">Could not validate credentials</p>
             <p>You are not logged in. You can get AI suggestions, but to create pets or book appointments, please{' '}
@@ -220,7 +221,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
             </p>
           </div>
         )}
-        {userRole === "admin" && (
+        {isAdmin && (
           <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 m-4" role="alert">
             <p className="font-bold">Staff Account Detected</p>
             <p>You are logged in as a staff member. You cannot book client appointments from this form.</p>
@@ -327,7 +328,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
               </div>
               <AIChat
                 ref={aiChatRef}
-                token={token}
+                token={clientToken}
                 context={{ ownerName, petName, complaint }}
                 startSignal={aiStartSignal}
                 onBookingComplete={(message) => setStatus({ type: "success", message })}

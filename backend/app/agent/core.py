@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from collections import defaultdict
 
 from app.ai_services import get_ollama_recommendation
+from app.service_catalog import infer_service_type
 from .tools import AgentTools, serialize_tool_output
 
 # In-memory conversation storage (in production, use Redis/database)
@@ -48,12 +50,14 @@ class InterpawsAgent:
         self.max_turns = 3  # Think → Act → Synthesize
 
     async def chat(
-        self, 
-        user_message: str, 
+        self,
+        user_message: str,
         context: str = "",
         session_id: Optional[str] = None,
         prior_history: Optional[List[Dict[str, str]]] = None,
-        client_email: Optional[str] = None
+        client_email: Optional[str] = None,
+        *,
+        complaint_text: Optional[str] = None
     ) -> Dict[str, Any]:
         """Run the ReAct reasoning loop with conversation memory."""
         current_date = datetime.now().strftime("%A, %B %d, %Y %H:%M")
@@ -79,6 +83,8 @@ class InterpawsAgent:
         
         conversation_history.append({"role": "system", "content": system_prompt})
         conversation_history.append({"role": "user", "content": user_message})
+
+        complaint_hint = complaint_text or user_message
         
         last_tool_output: Optional[Dict[str, Any]] = None
         
@@ -94,13 +100,16 @@ class InterpawsAgent:
             
             # Parse the agent's decision
             agent_decision = self._parse_agent_decision(llm_response)
-            
             if not agent_decision:
-                # LLM didn't follow format - treat as final answer
-                conversation_history.append({"role": "assistant", "content": llm_response})
+                agent_decision = await self._retry_agent_decision(prompt)
+
+            if not agent_decision:
+                # LLM didn't follow format - fall back to deterministic routing
+                fallback = self._keyword_fallback(complaint_hint)
+                conversation_history.append({"role": "assistant", "content": fallback["response"]})
                 if session_id:
                     self.save_conversation(session_id, conversation_history)
-                return {"response": llm_response, "tool_output": last_tool_output}
+                return fallback
             
             thought = agent_decision.get("thought", "")
             action = agent_decision.get("action", "")
@@ -147,6 +156,8 @@ class InterpawsAgent:
         
         # Max turns reached - synthesize from tool output
         result = self._emergency_synthesis(user_message, last_tool_output)
+        if not result.get("response"):
+            result = self._keyword_fallback(complaint_hint)
         if session_id:
             conversation_history.append({"role": "assistant", "content": result["response"]})
             self.save_conversation(session_id, conversation_history)
@@ -187,22 +198,41 @@ class InterpawsAgent:
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3].strip()
         
-        # Extract JSON
         try:
-            start = cleaned.index("{")
-            end = cleaned.rindex("}") + 1
-            json_str = cleaned[start:end]
+            start_match = re.search(r"\{", cleaned)
+            end_match = None
+            for match in re.finditer(r"\}", cleaned):
+                end_match = match
+
+            if not start_match or not end_match:
+                return None
+
+            json_str = cleaned[start_match.start(): end_match.end()]
             parsed = json.loads(json_str)
-            
+
             # Validate structure
             if "action" in parsed:
                 return parsed
-            
+
         except (ValueError, json.JSONDecodeError) as e:
             print(f"JSON parse error: {e}")
             return None
-        
+
         return None
+
+    async def _retry_agent_decision(self, prompt: str) -> Optional[Dict[str, Any]]:
+        """Retry the LLM with an explicit JSON-only correction prompt."""
+        correction_prompt = (
+            f"{prompt}\n\nRespond ONLY with a single JSON object containing keys: "
+            "action, action_input, and optional thought. No prose or code fences."
+        )
+        retry_response = await get_ollama_recommendation(
+            correction_prompt,
+            json_mode=False,
+            temperature=0.6,
+        )
+        print(f"Retry response: {retry_response[:200]}...")
+        return self._parse_agent_decision(retry_response)
 
     def _execute_tool(self, tool_name: str, tool_input: Any) -> Any:
         """Execute a tool and return the result."""
@@ -309,6 +339,31 @@ class InterpawsAgent:
         return {
             "response": "I ran into an issue completing that request. Could you try rephrasing?",
             "tool_output": last_tool_output
+        }
+
+    def _keyword_fallback(self, complaint_text: str) -> Dict[str, Any]:
+        """Deterministic v2-style routing when JSON parsing fails."""
+        complaint = complaint_text or ""
+        service_type, rationale = infer_service_type(complaint)
+        staff_matches = self.tools.find_staff(complaint)
+        staff_list = [] if isinstance(staff_matches, dict) else staff_matches
+        staff_str = ", ".join([staff.get("name", "staff") for staff in staff_list])
+        if not staff_str:
+            staff_str = "our on-call veterinary team"
+
+        response = (
+            f"I recommend scheduling {service_type} based on what you shared. "
+            f"I can route you to {staff_str}. Would you like me to propose the earliest slots?"
+        )
+
+        return {
+            "response": response,
+            "tool_output": {
+                "status": "fallback",
+                "service_type": service_type,
+                "rationale": rationale,
+                "staff": staff_list,
+            },
         }
     
     def save_conversation(self, session_id: str, conversation_history: List[Dict[str, str]]):

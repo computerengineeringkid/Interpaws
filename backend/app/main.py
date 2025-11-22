@@ -834,10 +834,17 @@ Please answer the user's question using the context provided. Be helpful, friend
 
 @app.post("/agent/chat", response_model=ChatResponse, tags=["AI Chat"])
 async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
-    """Agentic ReAct chat endpoint using tool calls for factual answers."""
+    """Agentic ReAct chat endpoint with conversation memory and pattern learning."""
     agent = InterpawsAgent(db)
     context = f"User context: complaint details - {request.complaint_text}"
-    agent_result = await agent.chat(request.prompt, context=context)
+    
+    agent_result = await agent.chat(
+        request.prompt, 
+        context=context,
+        session_id=request.session_id,
+        prior_history=request.conversation_history,
+        client_email=request.client_email
+    )
 
     if isinstance(agent_result, dict):
         slots = _normalize_slots(agent_result.get("tool_output"))

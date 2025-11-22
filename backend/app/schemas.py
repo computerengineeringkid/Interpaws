@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel, EmailStr
 
 
@@ -166,6 +166,9 @@ class ChatResponse(BaseModel):
 class SmartChatRequest(BaseModel):
     prompt: str
     complaint_text: str
+    session_id: Optional[str] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None
+    client_email: Optional[str] = None  # For pattern learning
 
 
 # Preferences Schemas

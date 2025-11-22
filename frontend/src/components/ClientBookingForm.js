@@ -87,6 +87,12 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   const handleCreatePet = async () => {
     if (!petName.trim()) return;
     setStatus(null);
+    
+    if (!token) {
+      setStatus({ type: "error", message: "Please log in to create a pet profile." });
+      return;
+    }
+    
     try {
       const response = await fetch("/api/pets", {
         method: "POST",
@@ -204,6 +210,15 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
         <CardTitle className="text-2xl text-center">Veterinary Intake Coordinator</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
+        {!token && (
+          <div className="bg-red-50 border-l-4 border-red-500 text-red-800 p-4 m-4" role="alert">
+            <p className="font-bold">Could not validate credentials</p>
+            <p>You are not logged in. You can get AI suggestions, but to create pets or book appointments, please{' '}
+              <a href="/login" className="underline font-semibold hover:text-red-900">log in</a> or{' '}
+              <a href="/register" className="underline font-semibold hover:text-red-900">register</a>.
+            </p>
+          </div>
+        )}
         {userRole === "admin" && (
           <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 m-4" role="alert">
             <p className="font-bold">Staff Account Detected</p>

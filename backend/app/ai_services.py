@@ -8,7 +8,7 @@ import asyncio
 # Initialize the embedding model once as a global instance to be reused
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"  # Back to 7B - more reliable even if slower
 
 # Get Ollama host from environment
 ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
@@ -59,9 +59,15 @@ async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str
                         "content": prompt,
                     },
                 ],
+                options={
+                    "num_ctx": 2048,  # Smaller context window = faster
+                    "temperature": 0.3,  # Lower temp = faster, more deterministic
+                    "num_predict": 512,  # Allow longer responses for reasoning
+                },
+                keep_alive="5m",  # Keep model loaded for faster subsequent calls
                 **chat_options,
             ),
-            timeout=45.0
+            timeout=90.0  # 90s for multi-turn agent reasoning with conversation memory
         )
     except asyncio.TimeoutError:
         return "I'm sorry, the AI is taking too long to respond. Please try again."

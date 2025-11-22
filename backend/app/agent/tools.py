@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+from collections import defaultdict
 
 from sqlalchemy import Date, cast
 from sqlalchemy.orm import Session
@@ -46,7 +47,7 @@ class AgentTools:
         )
         clients = client_query.all()
         if not clients:
-            return None, {"status": "error", "message": f"Could not find a client named '{owner_name}'."}
+            return None, {"status": "error", "message": f"Could not find a client named '{owner_name}'. Please ask them to register an account first."}
         if len(clients) > 1:
             return None, {
                 "status": "error",
@@ -61,7 +62,7 @@ class AgentTools:
         )
         pets = pet_query.all()
         if not pets:
-            return None, {"status": "error", "message": f"Could not find a pet named '{pet_name}' for owner '{owner_name}'."}
+            return None, {"status": "error", "message": f"Could not find a pet named '{pet_name}' for owner '{owner_name}'. Please ask the owner to create this pet profile first."}
         if len(pets) > 1:
             return None, {
                 "status": "error",
@@ -78,12 +79,30 @@ class AgentTools:
             return service_type, rationale, []
         return service_type, rationale, staff_matches
 
-    def _generate_slots(self, staff: models.Staff, duration_minutes: int, max_slots: int = 3) -> List[Dict[str, Any]]:
+    def _generate_slots(
+        self, 
+        staff: models.Staff, 
+        duration_minutes: int, 
+        max_slots: int = 3,
+        client_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Generate available slots, prioritizing by client's historical patterns."""
         now = datetime.utcnow()
         slots: List[Dict[str, Any]] = []
         end_window = now + timedelta(days=5)
         cursor = now
-        while cursor <= end_window and len(slots) < max_slots:
+        
+        # Get client preferences if available
+        preferred_day = None
+        preferred_time = None
+        if client_id:
+            patterns = self._get_client_patterns(client_id)
+            preferred_day = patterns.get("preferred_day")
+            preferred_time = patterns.get("preferred_time_period")
+        
+        # Collect all available slots first
+        all_slots = []
+        while cursor <= end_window:
             day_start = cursor.replace(hour=9, minute=0, second=0, microsecond=0)
             for hour in range(9, 17):
                 start_time = day_start.replace(hour=hour)
@@ -93,16 +112,71 @@ class AgentTools:
                 if end_time.hour > 17:
                     continue
                 if check_availability(self.db, staff.id, start_time, end_time):
-                    slots.append({
+                    # Score slot based on client patterns
+                    score = 0
+                    if preferred_day and start_time.strftime("%A") == preferred_day:
+                        score += 10
+                    if preferred_time:
+                        if preferred_time == "morning" and start_time.hour < 12:
+                            score += 5
+                        elif preferred_time == "afternoon" and 12 <= start_time.hour < 17:
+                            score += 5
+                        elif preferred_time == "evening" and start_time.hour >= 17:
+                            score += 5
+                    
+                    all_slots.append({
                         "start_time": start_time,
                         "end_time": end_time,
                         "staff_id": staff.id,
                         "staff_name": staff.name,
+                        "score": score
                     })
-                if len(slots) >= max_slots:
-                    break
             cursor += timedelta(days=1)
-        return slots
+        
+        # Sort by score (highest first), then by time (earliest first)
+        all_slots.sort(key=lambda s: (-s["score"], s["start_time"]))
+        
+        # Return top slots
+        return all_slots[:max_slots]
+    
+    def _get_client_patterns(self, client_id: int) -> Dict[str, str]:
+        """Extract booking patterns for a client."""
+        bookings = (
+            self.db.query(models.Booking)
+            .filter(models.Booking.client_id == client_id)
+            .order_by(models.Booking.start_time.desc())
+            .limit(10)
+            .all()
+        )
+        
+        if len(bookings) < 3:
+            return {}
+        
+        day_counts = defaultdict(int)
+        time_counts = defaultdict(int)
+        
+        for booking in bookings:
+            day_counts[booking.start_time.strftime("%A")] += 1
+            hour = booking.start_time.hour
+            if hour < 12:
+                time_counts["morning"] += 1
+            elif hour < 17:
+                time_counts["afternoon"] += 1
+            else:
+                time_counts["evening"] += 1
+        
+        result = {}
+        if day_counts:
+            preferred_day = max(day_counts, key=day_counts.get)
+            if day_counts[preferred_day] >= 3:
+                result["preferred_day"] = preferred_day
+        
+        if time_counts:
+            preferred_time = max(time_counts, key=time_counts.get)
+            if time_counts[preferred_time] >= 3:
+                result["preferred_time_period"] = preferred_time
+        
+        return result
 
     def propose_slots(self, pet_name: str, owner_name: str, complaint_description: str) -> Dict[str, Any]:
         client, pet_or_error = self._resolve_client_and_pet(owner_name, pet_name)
@@ -119,7 +193,7 @@ class AgentTools:
             return {"status": "error", "message": "Selected staff member could not be loaded."}
 
         duration_minutes = get_service_duration_minutes(service_type)
-        slots = self._generate_slots(staff, duration_minutes)
+        slots = self._generate_slots(staff, duration_minutes, client_id=client.id)
         return {
             "status": "need_selection",
             "service_type": service_type,
@@ -206,7 +280,8 @@ class AgentTools:
         duration_minutes = get_service_duration_minutes(service_type)
 
         if not preferred_time:
-            slots = self._generate_slots(best_staff, duration_minutes)
+            staff_obj = self.db.query(models.Staff).filter(models.Staff.id == staff_id).first()
+            slots = self._generate_slots(staff_obj, duration_minutes, client_id=client.id)
             return {
                 "status": "need_selection",
                 "message": f"I found {pet_or_error.name}. For '{complaint_description}', {staff_name} recommends a {service_type} visit. {rationale}",

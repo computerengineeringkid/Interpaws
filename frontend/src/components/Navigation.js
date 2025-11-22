@@ -6,8 +6,19 @@ import { AuthContext } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 
 export default function Navigation() {
-  const { user, token, userRole, logout } = useContext(AuthContext);
+  const {
+    clientUser,
+    adminUser,
+    clientToken,
+    adminToken,
+    userRole,
+    logout,
+  } = useContext(AuthContext);
   const router = useRouter();
+
+  const isClient = !!clientToken;
+  const isAdmin = !!adminToken;
+  const activeUser = isClient ? clientUser : adminUser;
 
   return (
     <nav className="border-b bg-white shadow-sm">
@@ -17,7 +28,7 @@ export default function Navigation() {
             <h1 className="text-2xl font-bold text-indigo-600 cursor-pointer" onClick={() => router.push('/')}>
               🐾 Interpaws VPMS
             </h1>
-            {token && userRole === 'client' && (
+            {isClient && userRole === 'client' && (
               <div className="hidden md:flex space-x-4">
                 <Button variant="ghost" onClick={() => router.push('/')}>
                   Book Appointment
@@ -30,7 +41,7 @@ export default function Navigation() {
                 </Button>
               </div>
             )}
-            {token && userRole === 'admin' && (
+            {isAdmin && userRole === 'admin' && (
               <div className="hidden md:flex space-x-4">
                 <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>
                   Dashboard
@@ -48,10 +59,10 @@ export default function Navigation() {
             )}
           </div>
           <div className="flex items-center space-x-4">
-            {token ? (
+            {(isClient || isAdmin) ? (
               <>
                 <span className="text-sm text-gray-600">
-                  {user?.name || user?.email}
+                  {activeUser?.name || activeUser?.email}
                 </span>
                 <Button variant="outline" onClick={logout}>
                   Logout

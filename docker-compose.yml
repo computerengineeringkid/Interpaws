@@ -20,6 +20,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/interpawsdb
       OLLAMA_HOST: http://ollama:11434
@@ -29,8 +31,11 @@ services:
       - ./backend/app:/code/app
     ports:
       - "8000:8000"
-    command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   frontend:
     build:
@@ -48,10 +53,17 @@ services:
   ollama:
     image: ollama/ollama
     container_name: interpaws-ollama
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     ports:
       - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q 'qwen2.5:7b'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:

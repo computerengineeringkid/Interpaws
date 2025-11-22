@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -28,6 +29,24 @@ from .auth import (
 from .service_catalog import get_service_duration_minutes, infer_service_type
 
 app = FastAPI()
+
+
+@app.get("/health")
+def healthcheck():
+    """Lightweight healthcheck for container orchestration."""
+    db_status = "ok"
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001 - surface unhealthy state without failing app startup
+        db_status = "unhealthy"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
 
 @app.on_event("startup")
 def on_startup() -> None:
@@ -89,11 +108,13 @@ def _extract_json_payload(raw: Optional[str]) -> Optional[dict]:
     try:
         return json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start != -1 and end != -1 and end > start:
+        start_match = re.search(r"\{", raw)
+        end_match = None
+        for match in re.finditer(r"\}", raw):
+            end_match = match
+        if start_match and end_match and end_match.end() > start_match.start():
             try:
-                return json.loads(raw[start:end + 1])
+                return json.loads(raw[start_match.start(): end_match.end()])
             except json.JSONDecodeError:
                 return None
     return None
@@ -844,7 +865,8 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
             context=context,
             session_id=request.session_id,
             prior_history=request.conversation_history,
-            client_email=request.client_email
+            client_email=request.client_email,
+            complaint_text=request.complaint_text,
         )
 
         if isinstance(agent_result, dict):

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function AdminBookingList({ selectedDate, setCancellationSuggestions }) {
-  const { token } = useAuth();
+  const { adminToken } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -19,7 +19,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
   const [riskLoading, setRiskLoading] = useState({});
 
   const fetchBookings = useCallback(async () => {
-    if (!token) return;
+    if (!adminToken) return;
     
     setIsLoading(true);
     setError(null);
@@ -28,7 +28,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
       const dateString = format(selectedDate, 'yyyy-MM-dd');
       const response = await fetch(`/api/bookings/${dateString}`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${adminToken}`,
         },
       });
       
@@ -44,19 +44,19 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDate, token]);
+  }, [selectedDate, adminToken]);
 
   useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
 
   const fetchRisk = useCallback(async (bookingId) => {
-    if (!token) return;
+    if (!adminToken) return;
     setRiskLoading((prev) => ({ ...prev, [bookingId]: true }));
     try {
       const response = await fetch(`/api/admin/bookings/${bookingId}/risk`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${adminToken}`,
         },
       });
 
@@ -79,7 +79,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
     } finally {
       setRiskLoading((prev) => ({ ...prev, [bookingId]: false }));
     }
-  }, [token]);
+  }, [adminToken]);
 
   const prioritizedBookings = useMemo(() => {
     const upcoming = bookings
@@ -159,7 +159,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
       const response = await fetch(`/api/bookings/${bookingId}`, {
         method: 'DELETE',
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${adminToken}`,
         },
       });
 
@@ -181,7 +181,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({ status: newStatus }),
       });
@@ -200,7 +200,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
         fetch(`/api/log-feedback/?booking_id=${bookingId}`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${adminToken}`,
           },
         }).catch(err => {
           console.error('Failed to log AI feedback:', err);
@@ -212,7 +212,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
         try {
           const suggestionsResponse = await fetch(`/api/admin/cancellation_suggestion/${bookingId}`, {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${adminToken}`,
             },
           });
 

@@ -340,7 +340,8 @@ def test_ai_services():
     
     # Test chat endpoint with correct schema
     chat_data = {
-        "prompt": "What should I do if my dog is limping?"
+        "prompt": "What should I do if my dog is limping?",
+        "complaint_text": "My dog has been limping on his front paw for the last two days"
     }
     
     response = requests.post(f"{BASE_URL}/chat", json=chat_data, headers=auth_headers)
@@ -351,6 +352,21 @@ def test_ai_services():
             print_info(f"Response snippet: {data['response'][:100]}...")
     else:
         print_info("AI chat requires Ollama (optional feature)")
+    
+    # Test Agent Chat endpoint (v3 Agentic Shift)
+    agent_data = {
+        "prompt": "Who can help with my dog's broken leg?",
+        "complaint_text": "My dog has a broken leg"
+    }
+    
+    response = requests.post(f"{BASE_URL}/agent/chat", json=agent_data, headers=auth_headers)
+    if check_response(response, 200, "Agent Chat (ReAct)"):
+        data = response.json()
+        if "response" in data:
+            print_success("Agent chat response received")
+            print_info(f"Agent response: {data['response'][:100]}...")
+    else:
+        print_info("Agent chat requires Ollama (optional feature)")
     
     return True
 

@@ -59,16 +59,6 @@ const AIChat = forwardRef(({ complaint }, ref) => {
     e.preventDefault();
     if (!prompt.trim()) return;
 
-    // Check if complaint text is provided
-    if (!complaint || !complaint.trim()) {
-      const warningMessage = { 
-        role: "ai", 
-        content: "Please describe your pet's issue in the booking form above first, so I can provide personalized assistance." 
-      };
-      setMessages((prev) => [...prev, warningMessage]);
-      return;
-    }
-
     setIsLoading(true);
 
     // Add user message immediately
@@ -84,7 +74,7 @@ const AIChat = forwardRef(({ complaint }, ref) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           prompt: userMessage.content,
-          complaint_text: complaint
+          complaint_text: complaint || "No initial complaint provided"
         }),
       });
 
@@ -104,59 +94,53 @@ const AIChat = forwardRef(({ complaint }, ref) => {
   }
 
   return (
-    <Card className="mt-8">
-      <CardHeader>
-        <CardTitle className="text-xl">AI Chat</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="space-y-4">
+      <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-white dark:bg-zinc-950">
         <div className="space-y-4">
-          <ScrollArea className="h-64 w-full rounded-md border p-3">
-            <div className="space-y-3">
-              {messages.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  {complaint && complaint.trim() 
-                    ? "Starting AI triage interview..."
-                    : "Please describe your pet's issue in the booking form above, then I'll ask you some questions to help better understand the situation."}
-                </div>
-              ) : (
-                messages.map((m, idx) => (
-                  <div
-                    key={idx}
-                    className={
-                      m.role === "user"
-                        ? "flex justify-end"
-                        : "flex justify-start"
-                    }
-                  >
-                    <div
-                      className={
-                        m.role === "user"
-                          ? "bg-primary text-primary-foreground max-w-[80%] rounded-lg px-3 py-2 text-sm"
-                          : "bg-muted text-foreground max-w-[80%] rounded-lg px-3 py-2 text-sm"
-                      }
-                    >
-                      {m.content}
-                    </div>
-                  </div>
-                ))
-              )}
+          {messages.length === 0 ? (
+            <div className="text-center text-muted-foreground py-10">
+              <p className="text-lg font-medium mb-2">👋 Welcome to Interpaws!</p>
+              <p>I'm your AI Veterinary Intake Coordinator.</p>
+              <p className="mt-2">Tell me how I can help your pet today (e.g., "My dog has a cough").</p>
             </div>
-          </ScrollArea>
-
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <Input
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={isLoading ? "Thinking..." : "Answer the AI's questions or ask your own..."}
-              disabled={isLoading}
-            />
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? "Sending..." : "Send"}
-            </Button>
-          </form>
+          ) : (
+            messages.map((m, idx) => (
+              <div
+                key={idx}
+                className={
+                  m.role === "user"
+                    ? "flex justify-end"
+                    : "flex justify-start"
+                }
+              >
+                <div
+                  className={
+                    m.role === "user"
+                      ? "bg-primary text-primary-foreground max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm"
+                      : "bg-muted text-foreground max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm whitespace-pre-wrap"
+                  }
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </ScrollArea>
+
+      <form onSubmit={handleSubmit} className="flex gap-2">
+        <Input
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={isLoading ? "Thinking..." : "Type your message..."}
+          disabled={isLoading}
+          className="flex-1"
+        />
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Sending..." : "Send"}
+        </Button>
+      </form>
+    </div>
   );
 });
 

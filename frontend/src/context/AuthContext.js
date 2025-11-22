@@ -117,7 +117,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (name, email, password, clinicId = null) => {
     try {
-      const response = await fetch("/api/clients/", {
+      const response = await fetch("/api/clients", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

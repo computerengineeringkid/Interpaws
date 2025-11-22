@@ -101,7 +101,7 @@ def _extract_json_payload(raw: Optional[str]) -> Optional[dict]:
 # Authentication Endpoints
 # ============================================
 
-@app.post("/clients/", response_model=schemas.Client, tags=["Authentication"])
+@app.post("/clients", response_model=schemas.Client, tags=["Authentication"])
 def register_client(client: schemas.ClientCreate, db: Session = Depends(get_db)):
     """Register a new client account."""
     # Check if email already exists
@@ -169,7 +169,7 @@ async def get_current_client(current_user: models.Client = Depends(get_current_u
 # Booking Endpoints
 # ============================================
 
-@app.post("/bookings/", response_model=schemas.Booking)
+@app.post("/bookings", response_model=schemas.Booking)
 async def create_booking(booking: schemas.BookingCreate, current_user: models.Client = Depends(get_current_user), db: Session = Depends(get_db)):
     # Check if the staff member is available during the requested time
     is_available = check_availability(db, booking.staff_id, booking.start_time, booking.end_time)

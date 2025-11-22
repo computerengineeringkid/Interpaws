@@ -1,0 +1,51 @@
+﻿Interpaws Master Plan v3.0: The Agentic Shift
+Status: Active | Phase: 3 (Agentic Intelligence)
+Core Model: Qwen 3 8B (Instruct) | Architecture: ReAct (Reason + Act)
+1. The Core Pivot
+The previous "v2" plan focused on reactive features (answering questions based on text). v3 pivots to Agency: the ability of the AI to perform multi-step reasoning and execute database queries autonomously.
+Feature
+	v2 (Legacy)
+	v3 (Agentic)
+	Model
+	Llama 2 / 3 (Chat)
+	Qwen 3 8B
+	Logic
+	Retrieval Augmented Generation (RAG)
+	ReAct Loop (Thought → Tool → Observation)
+	Inventory
+	AI cannot see stock
+	AI queries check_inventory tool
+	Schedule
+	AI suggests "mornings"
+	AI checks real-time availability
+	Output
+	Text Paragraphs
+	JSON Actions + Natural Language
+	2. Technical Architecture
+The "Brain": Agent Core (backend/app/agent/core.py)
+Instead of a single prompt-response, the backend now implements a while loop that allows Qwen 3 8B to "think" and "act" up to 3 times per request.
+* System Prompt: Strictly enforces JSON Mode for tool calls. Qwen 3 is specifically chosen for its superior instruction-following capabilities at the 8B size.
+* Safety: The AI is "railroaded" into using specific, safe Python functions (Tools) to access data, preventing raw SQL injection.
+The "Hands": Agent Tools (backend/app/agent/tools.py)
+The AI is given specific interfaces to interact with the PostgreSQL database:
+1. find_staff(query): Uses vector search to find staff IDs based on complaint descriptions (e.g., "Limping dog" -> Orthopedic Surgeon).
+2. check_schedule(staff_id, date, time): Wraps the existing check_availability logic to return True/False for specific slots.
+3. check_inventory(item_name): Queries the Medication table to return stock levels (e.g., "Amoxicillin: 4 units").
+3. Implementation Roadmap (Immediate)
+Step 1: Infrastructure Upgrade
+* Task: Switch Docker services to pull the Qwen 3 8B model.
+* Command: docker-compose exec ollama ollama pull qwen3:8b (or qwen2.5:7b if qwen3 tag is unavailable in specific registry).
+* Reason: This model vastly outperforms previous open-source 8B models at following complex JSON instructions for tool usage.
+Step 2: Backend Refactor
+* New Module: backend/app/agent/ containing core.py and tools.py.
+* Endpoint: POST /agent/chat replaces or augments the standard chat endpoint.
+* Logic: The endpoint instantiates InterpawsAgent (powered by Qwen 3), runs the ReAct loop, and returns the final answer.
+Step 3: Frontend Connection
+* Component: AIChat.js updated to hit the new agent endpoint.
+* UX: The UI remains the same, but the answers become factually grounded in the live database (e.g., "Yes, we have 3 slots open tomorrow" instead of "Please check the calendar").
+4. Success Criteria
+The system is considered "v3 Complete" when the following conversation is possible:
+1. User: "My dog has a broken leg. Who can help?"
+2. Agent (Internal): Calls find_staff("broken leg") → Finds Dr. Smith (Orthopedic).
+3. Agent (Internal): Calls check_schedule(Dr. Smith, Tomorrow) → Finds 2 PM slot.
+4. Agent (Reply): "Dr. Smith specializes in orthopedics. She has an opening tomorrow at 2 PM. Shall I book it?"

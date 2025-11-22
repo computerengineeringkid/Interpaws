@@ -3,6 +3,7 @@
 import os
 import ollama
 from sentence_transformers import SentenceTransformer
+import asyncio
 
 # Initialize the embedding model once as a global instance to be reused
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -30,7 +31,7 @@ def get_embedding(text: str) -> list[float]:
 
 async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str:
     """
-    Get a recommendation from Ollama using the qwen2.5:7b model.
+    Get a recommendation from Ollama using the qwen3:8b model.
 
     This is a placeholder function to ensure the Ollama connection works.
 
@@ -47,16 +48,21 @@ async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str
         chat_options["format"] = "json"
 
     try:
-        response = await ollama_client.chat(
-            model="qwen2.5:7b",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            **chat_options,
+        response = await asyncio.wait_for(
+            ollama_client.chat(
+                model="qwen2.5:7b",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                **chat_options,
+            ),
+            timeout=45.0
         )
+    except asyncio.TimeoutError:
+        return "I'm sorry, the AI is taking too long to respond. Please try again."
     except Exception:
         return "Sorry, I'm having trouble connecting to the AI service right now. Please try again later."
 

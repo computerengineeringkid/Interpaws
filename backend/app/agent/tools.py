@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import Date, cast
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.ai_services import get_embedding
 from app.booking_logic import check_availability
+from app.service_catalog import get_service_duration_minutes, infer_service_type
 
 
 class AgentTools:
@@ -37,6 +38,97 @@ class AgentTools:
             ]
         except Exception as exc:  # noqa: BLE001
             return {"status": "error", "message": f"Failed to find staff: {exc}"}
+
+    def _resolve_client_and_pet(self, owner_name: str, pet_name: str) -> Tuple[Any, Any]:
+        client_query = (
+            self.db.query(models.Client)
+            .filter(models.Client.name.ilike(f"%{owner_name}%"))
+        )
+        clients = client_query.all()
+        if not clients:
+            return None, {"status": "error", "message": f"Could not find a client named '{owner_name}'."}
+        if len(clients) > 1:
+            return None, {
+                "status": "error",
+                "message": "Multiple clients match that owner name. Please provide the full name.",
+                "candidates": [client.name for client in clients],
+            }
+        client = clients[0]
+
+        pet_query = (
+            self.db.query(models.Pet)
+            .filter(models.Pet.client_id == client.id, models.Pet.name.ilike(f"%{pet_name}%"))
+        )
+        pets = pet_query.all()
+        if not pets:
+            return None, {"status": "error", "message": f"Could not find a pet named '{pet_name}' for owner '{owner_name}'."}
+        if len(pets) > 1:
+            return None, {
+                "status": "error",
+                "message": "Multiple pets match that name. Please include breed or species to disambiguate.",
+                "candidates": [pet.name for pet in pets],
+            }
+
+        return client, pets[0]
+
+    def _infer_service_and_staff(self, complaint_description: str, provided_service: str | None = None) -> Tuple[str, str, List[Dict[str, Any]]]:
+        service_type, rationale = infer_service_type(complaint_description, provided_service)
+        staff_matches = self.find_staff(f"{service_type}: {complaint_description}")
+        if isinstance(staff_matches, dict):
+            return service_type, rationale, []
+        return service_type, rationale, staff_matches
+
+    def _generate_slots(self, staff: models.Staff, duration_minutes: int, max_slots: int = 3) -> List[Dict[str, Any]]:
+        now = datetime.utcnow()
+        slots: List[Dict[str, Any]] = []
+        end_window = now + timedelta(days=5)
+        cursor = now
+        while cursor <= end_window and len(slots) < max_slots:
+            day_start = cursor.replace(hour=9, minute=0, second=0, microsecond=0)
+            for hour in range(9, 17):
+                start_time = day_start.replace(hour=hour)
+                if start_time <= now:
+                    continue
+                end_time = start_time + timedelta(minutes=duration_minutes)
+                if end_time.hour > 17:
+                    continue
+                if check_availability(self.db, staff.id, start_time, end_time):
+                    slots.append({
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "staff_id": staff.id,
+                        "staff_name": staff.name,
+                    })
+                if len(slots) >= max_slots:
+                    break
+            cursor += timedelta(days=1)
+        return slots
+
+    def propose_slots(self, pet_name: str, owner_name: str, complaint_description: str) -> Dict[str, Any]:
+        client, pet_or_error = self._resolve_client_and_pet(owner_name, pet_name)
+        if not client:
+            return pet_or_error
+
+        service_type, rationale, staff_matches = self._infer_service_and_staff(complaint_description)
+        if not staff_matches:
+            return {"status": "error", "message": "No suitable staff found for this complaint."}
+
+        staff_id = staff_matches[0]["id"]
+        staff = self.db.query(models.Staff).filter(models.Staff.id == staff_id).first()
+        if not staff:
+            return {"status": "error", "message": "Selected staff member could not be loaded."}
+
+        duration_minutes = get_service_duration_minutes(service_type)
+        slots = self._generate_slots(staff, duration_minutes)
+        return {
+            "status": "need_selection",
+            "service_type": service_type,
+            "rationale": rationale,
+            "slots": slots,
+            "pet_name": pet_or_error.name,
+            "owner_name": client.name,
+            "duration_minutes": duration_minutes,
+        }
 
     def check_schedule(self, staff_id: int, date_str: str, time_str: str = None) -> Dict[str, Any]:
         """Check if a staff member is available at a given date and time."""
@@ -100,86 +192,62 @@ class AgentTools:
         Unified tool to handle booking flow: identifies pet, classifies service,
         finds staff, and either suggests slots or books the appointment.
         """
-        # 1. Identify Client and Pet
-        # Simple case-insensitive match for now
-        client = (
-            self.db.query(models.Client)
-            .filter(models.Client.name.ilike(f"%{owner_name}%"))
-            .first()
-        )
+        client, pet_or_error = self._resolve_client_and_pet(owner_name, pet_name)
         if not client:
-            return {"status": "error", "message": f"Could not find a client named '{owner_name}'. Please verify the name."}
+            return pet_or_error
 
-        pet = (
-            self.db.query(models.Pet)
-            .filter(models.Pet.client_id == client.id, models.Pet.name.ilike(f"%{pet_name}%"))
-            .first()
-        )
-        if not pet:
-            return {"status": "error", "message": f"Could not find a pet named '{pet_name}' for owner '{owner_name}'."}
-
-        # 2. Classify Service & Find Staff
-        # We'll use the existing find_staff logic (embedding search)
-        # This implicitly handles "Service Classification" by matching complaint to skills
-        staff_matches = self.find_staff(complaint_description)
+        service_type, rationale, staff_matches = self._infer_service_and_staff(complaint_description)
         if not staff_matches:
             return {"status": "error", "message": "No suitable staff found for this complaint."}
-        
+
         best_staff = staff_matches[0]
         staff_id = best_staff["id"]
         staff_name = best_staff["name"]
+        duration_minutes = get_service_duration_minutes(service_type)
 
-        # 3. Handle Slot Finding or Booking
         if not preferred_time:
-            # Find slots for today/tomorrow
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            schedule = self.check_schedule(staff_id, today_str)
+            slots = self._generate_slots(best_staff, duration_minutes)
             return {
                 "status": "need_selection",
-                "message": f"I found {pet.name}. For '{complaint_description}', {staff_name} is available.",
-                "available_slots": schedule.get("available_slots", []),
-                "staff_name": staff_name,
-                "date": today_str
+                "message": f"I found {pet_or_error.name}. For '{complaint_description}', {staff_name} recommends a {service_type} visit. {rationale}",
+                "slots": slots,
+                "service_type": service_type,
+                "duration_minutes": duration_minutes,
             }
-        else:
-            # Try to book
-            # preferred_time format expected: "YYYY-MM-DD HH:MM" or similar
+
+        try:
             try:
-                # Flexible parsing
-                try:
-                    start_time = datetime.strptime(preferred_time, "%Y-%m-%d %H:%M")
-                except ValueError:
-                    # Try ISO format
-                    start_time = datetime.fromisoformat(preferred_time)
+                start_time = datetime.strptime(preferred_time, "%Y-%m-%d %H:%M")
+            except ValueError:
+                start_time = datetime.fromisoformat(preferred_time)
 
-                end_time = start_time + timedelta(hours=1) # Default 1 hour
+            end_time = start_time + timedelta(minutes=duration_minutes)
 
-                # Check availability
-                is_available = check_availability(self.db, staff_id, start_time, end_time)
-                if not is_available:
-                     return {"status": "error", "message": f"Slot {preferred_time} is no longer available."}
+            is_available = check_availability(self.db, staff_id, start_time, end_time)
+            if not is_available:
+                return {"status": "error", "message": f"Slot {preferred_time} is no longer available."}
 
-                # Create Booking
-                new_booking = models.Booking(
-                    start_time=start_time,
-                    end_time=end_time,
-                    client_id=client.id,
-                    pet_id=pet.id,
-                    staff_id=staff_id,
-                    complaint_reason=complaint_description,
-                    status="confirmed"
-                )
-                self.db.add(new_booking)
-                self.db.commit()
-                self.db.refresh(new_booking)
+            new_booking = models.Booking(
+                start_time=start_time,
+                end_time=end_time,
+                client_id=client.id,
+                pet_id=pet_or_error.id,
+                staff_id=staff_id,
+                complaint_reason=complaint_description,
+                status="confirmed",
+            )
+            self.db.add(new_booking)
+            self.db.commit()
+            self.db.refresh(new_booking)
 
-                return {
-                    "status": "success",
-                    "message": f"Appointment confirmed for {pet.name} with {staff_name} at {start_time.strftime('%I:%M %p')} on {start_time.strftime('%B %d')}."
-                }
+            return {
+                "status": "success",
+                "message": f"Appointment confirmed for {pet_or_error.name} with {staff_name} at {start_time.strftime('%I:%M %p')} on {start_time.strftime('%B %d')}.",
+                "service_type": service_type,
+            }
 
-            except Exception as e:
-                return {"status": "error", "message": f"Booking failed: {str(e)}"}
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "message": f"Booking failed: {str(exc)}"}
 
     def check_inventory(self, item_name: str) -> Dict[str, Any]:
         """Return the current stock quantity for a medication."""

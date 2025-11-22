@@ -835,30 +835,44 @@ Please answer the user's question using the context provided. Be helpful, friend
 @app.post("/agent/chat", response_model=ChatResponse, tags=["AI Chat"])
 async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     """Agentic ReAct chat endpoint with conversation memory and pattern learning."""
-    agent = InterpawsAgent(db)
-    context = f"User context: complaint details - {request.complaint_text}"
-    
-    agent_result = await agent.chat(
-        request.prompt, 
-        context=context,
-        session_id=request.session_id,
-        prior_history=request.conversation_history,
-        client_email=request.client_email
-    )
+    try:
+        agent = InterpawsAgent(db)
+        context = f"User context: complaint details - {request.complaint_text}"
 
-    if isinstance(agent_result, dict):
-        slots = _normalize_slots(agent_result.get("tool_output"))
-        service_type = None
-        tool_output = agent_result.get("tool_output")
-        if isinstance(tool_output, dict):
-            service_type = tool_output.get("service_type")
-        return ChatResponse(
-            response=agent_result.get("response", ""),
-            slots=slots or None,
-            service_type=service_type,
+        agent_result = await agent.chat(
+            request.prompt,
+            context=context,
+            session_id=request.session_id,
+            prior_history=request.conversation_history,
+            client_email=request.client_email
         )
 
-    return ChatResponse(response=str(agent_result))
+        if isinstance(agent_result, dict):
+            slots = _normalize_slots(agent_result.get("tool_output"))
+            service_type = None
+            tool_output = agent_result.get("tool_output")
+            if isinstance(tool_output, dict):
+                service_type = tool_output.get("service_type")
+            return ChatResponse(
+                response=agent_result.get("response", ""),
+                slots=slots or None,
+                service_type=service_type,
+            )
+
+        return ChatResponse(response=str(agent_result))
+    except Exception as e:
+        import traceback
+        print(f"Agent chat error: {e}")
+        traceback.print_exc()
+        # Return a user-friendly error message
+        error_msg = str(e)
+        if "connect" in error_msg.lower() or "connection" in error_msg.lower():
+            return ChatResponse(
+                response="I'm having trouble connecting to the AI service. Please ensure Ollama is running and try again."
+            )
+        return ChatResponse(
+            response=f"I encountered an error while processing your request. Please try again. (Error: {error_msg})"
+        )
 
 
 # Staff Endpoints

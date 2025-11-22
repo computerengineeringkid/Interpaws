@@ -71,7 +71,12 @@ async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str
         )
     except asyncio.TimeoutError:
         return "I'm sorry, the AI is taking too long to respond. Please try again."
-    except Exception:
-        return "Sorry, I'm having trouble connecting to the AI service right now. Please try again later."
+    except Exception as e:
+        error_str = str(e).lower()
+        if "connect" in error_str or "refused" in error_str or "unreachable" in error_str:
+            print(f"Ollama connection error: {e}")
+            return f"Unable to connect to AI service at {ollama_host}. Please ensure Ollama is running with the {DEFAULT_OLLAMA_MODEL} model."
+        print(f"Ollama error: {e}")
+        return "Sorry, I'm having trouble with the AI service right now. Please try again later."
 
     return response.get("message", {}).get("content", "")

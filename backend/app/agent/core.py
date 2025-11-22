@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from collections import defaultdict
 
-from app.ai_services import get_ollama_recommendation
+from app.ai_services import extract_json_payload, get_ollama_recommendation
 from app.service_catalog import infer_service_type
 from .tools import AgentTools, serialize_tool_output
 
@@ -187,37 +186,12 @@ class InterpawsAgent:
         """Parse the agent's JSON decision."""
         if not response_text:
             return None
-        
-        cleaned = response_text.strip()
-        
-        # Remove markdown code blocks if present
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:].strip()
-        elif cleaned.startswith("```"):
-            cleaned = cleaned[3:].strip()
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3].strip()
-        
-        try:
-            start_match = re.search(r"\{", cleaned)
-            end_match = None
-            for match in re.finditer(r"\}", cleaned):
-                end_match = match
 
-            if not start_match or not end_match:
-                return None
+        payload = extract_json_payload(response_text)
+        if payload and "action" in payload:
+            return payload
 
-            json_str = cleaned[start_match.start(): end_match.end()]
-            parsed = json.loads(json_str)
-
-            # Validate structure
-            if "action" in parsed:
-                return parsed
-
-        except (ValueError, json.JSONDecodeError) as e:
-            print(f"JSON parse error: {e}")
-            return None
-
+        print("JSON parse error: unable to extract action from response")
         return None
 
     async def _retry_agent_decision(self, prompt: str) -> Optional[Dict[str, Any]]:

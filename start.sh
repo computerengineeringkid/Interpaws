@@ -49,10 +49,10 @@ fi
 docker-compose up -d $BUILD_FLAG
 
 # Ensure the standard model is present
-echo -e "\n🤖 Pulling standard Ollama model (qwen2.5:7b)..."
-if ! docker-compose exec ollama ollama pull qwen2.5:7b; then
-    echo -e "\033[0;33m⚠️  Warning: Unable to pull qwen2.5:7b automatically.\033[0m"
-    echo "   Please run 'docker-compose exec ollama ollama pull qwen2.5:7b' manually after containers are healthy."
+echo -e "\n🤖 Pulling standard Ollama model (llama3)..."
+if ! docker-compose exec ollama ollama pull llama3; then
+    echo -e "\033[0;33m⚠️  Warning: Unable to pull llama3 automatically.\033[0m"
+    echo "   Please run 'docker-compose exec ollama ollama pull llama3' manually after containers are healthy."
 fi
 
 # 3. HEALTH CHECKS

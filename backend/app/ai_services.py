@@ -1,14 +1,17 @@
 """AI services for embeddings and generative recommendations."""
 
 import os
+import json
+import asyncio
+import re
+
 import ollama
 from sentence_transformers import SentenceTransformer
-import asyncio
 
 # Initialize the embedding model once as a global instance to be reused
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"  # Stabilized single-model policy
+DEFAULT_OLLAMA_MODEL = "llama3"  # Stabilized single-model policy
 
 # Get Ollama host from environment, defaulting to the internal service name
 ollama_host = os.getenv("OLLAMA_HOST", "http://ollama:11434")
@@ -38,7 +41,7 @@ async def get_ollama_recommendation(
     temperature: float = 0.3,
 ) -> str:
     """
-    Get a recommendation from Ollama using the standard qwen2.5:7b model.
+    Get a recommendation from Ollama using the standard llama3 model.
 
     This is a placeholder function to ensure the Ollama connection works.
 
@@ -85,3 +88,53 @@ async def get_ollama_recommendation(
         return "Sorry, I'm having trouble with the AI service right now. Please try again later."
 
     return response.get("message", {}).get("content", "")
+
+
+def extract_json_payload(raw: str) -> dict | None:
+    """Extract a JSON object from an LLM response with best-effort repair.
+
+    The LLM may wrap JSON in prose or markdown fences. We grab the first
+    opening brace and the last closing brace to isolate the payload before
+    attempting to load it. If parsing fails, None is returned.
+    """
+
+    if not raw:
+        return None
+
+    cleaned = raw.strip()
+    # Strip markdown fences
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    candidate = cleaned[start : end + 1]
+
+    # Remove any trailing text after the last balanced brace sequence
+    brace_stack = 0
+    last_valid_index = None
+    for idx, char in enumerate(candidate):
+        if char == "{":
+            brace_stack += 1
+        elif char == "}":
+            brace_stack -= 1
+            if brace_stack == 0:
+                last_valid_index = idx
+
+    if last_valid_index is not None:
+        candidate = candidate[: last_valid_index + 1]
+
+    try:
+        return json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        # Final regex fallback to catch nested braces with noise
+        match = re.search(r"\{.*\}", candidate, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except (json.JSONDecodeError, TypeError):
+                return None
+    return None

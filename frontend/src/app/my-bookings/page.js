@@ -29,7 +29,7 @@ export default function MyBookingsPage() {
         });
         if (response.ok) {
           const data = await response.json();
-          setBookings(data);
+          setBookings(Array.isArray(data) ? data : []);
           setError(null);
         } else {
           setError('Failed to load bookings. Please try again.');
@@ -64,7 +64,7 @@ export default function MyBookingsPage() {
       }
 
       const data = await response.json();
-      setRescheduleOptions(data);
+      setRescheduleOptions(Array.isArray(data) ? data : []);
     } catch (err) {
       setRescheduleError('Unable to load smart options. Please try again.');
       console.error('Error loading reschedule options:', err);
@@ -93,9 +93,9 @@ export default function MyBookingsPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          start_time: option.start_time,
-          end_time: option.end_time,
-          staff_id: option.staff_id,
+          start_time: option?.start_time,
+          end_time: option?.end_time,
+          staff_id: option?.staff_id,
         }),
       });
 
@@ -154,36 +154,36 @@ export default function MyBookingsPage() {
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-lg">Booking #{booking.id}</CardTitle>
-                    <p className="text-sm text-muted-foreground">{new Date(booking.start_time).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</p>
+                    <p className="text-sm text-muted-foreground">{booking?.start_time ? new Date(booking.start_time).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : 'Pending schedule'}</p>
                   </div>
                   <span className={`px-3 py-1 text-xs font-semibold rounded-full ${booking.status === 'cancelled' ? 'bg-red-100 text-red-700' : booking.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {booking.status}
+                    {booking?.status || 'pending'}
                   </span>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <div className="grid gap-1 sm:grid-cols-2">
                     <div>
                       <p className="text-muted-foreground">Starts</p>
-                      <p className="font-medium">{new Date(booking.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      <p className="font-medium">{booking?.start_time ? new Date(booking.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD'}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Ends</p>
-                      <p className="font-medium">{new Date(booking.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      <p className="font-medium">{booking?.end_time ? new Date(booking.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD'}</p>
                     </div>
-                    {booking.staff_id && (
+                    {booking?.staff_id && (
                       <div>
                         <p className="text-muted-foreground">Staff</p>
                         <p className="font-medium">#{booking.staff_id}</p>
                       </div>
                     )}
-                    {booking.pet_id && (
+                    {booking?.pet_id && (
                       <div>
                         <p className="text-muted-foreground">Pet</p>
                         <p className="font-medium">#{booking.pet_id}</p>
                       </div>
                     )}
                   </div>
-                  {booking.complaint_reason && (
+                  {booking?.complaint_reason && (
                     <p className="text-sm text-muted-foreground border-l-2 border-primary pl-3">
                       {booking.complaint_reason}
                     </p>
@@ -192,7 +192,7 @@ export default function MyBookingsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={new Date(booking.start_time) <= new Date() || booking.status === 'cancelled'}
+                      disabled={!booking?.start_time || new Date(booking.start_time) <= new Date() || booking.status === 'cancelled'}
                       onClick={() => openRescheduleModal(booking)}
                     >
                       One-Click Reschedule
@@ -233,29 +233,35 @@ export default function MyBookingsPage() {
               ) : rescheduleOptions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No perfect matches yet. Try again in a moment.</p>
               ) : (
-                rescheduleOptions.map((option) => (
-                  <div key={option.start_time} className="rounded-xl border p-4 shadow-sm animate-fade-in">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="font-semibold">{new Date(option.start_time).toLocaleString()}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {option.staff_name ? option.staff_name : `Staff #${option.staff_id}`} · Pref match {(option.preference_match ?? 0).toFixed(2)}
-                        </p>
-                        {option.reason && (
-                          <p className="text-xs text-muted-foreground mt-1">{option.reason}</p>
-                        )}
+                rescheduleOptions.map((option, idx) => {
+                  const startTime = option?.start_time;
+                  const readable = startTime ? new Date(startTime).toLocaleString() : 'TBD';
+                  const staffLabel = option?.staff_name ? option.staff_name : `Staff #${option?.staff_id ?? 'TBD'}`;
+
+                  return (
+                    <div key={startTime || `option-${idx}`} className="rounded-xl border p-4 shadow-sm animate-fade-in">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">{readable}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {staffLabel} · Pref match {(option?.preference_match ?? 0).toFixed(2)}
+                          </p>
+                          {option?.reason && (
+                            <p className="text-xs text-muted-foreground mt-1">{option.reason}</p>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          className="animate-fade-in"
+                          disabled={optionSubmitting === startTime}
+                          onClick={() => handleApplyOption(option)}
+                        >
+                          {optionSubmitting === startTime ? 'Applying...' : 'Choose Slot'}
+                        </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        className="animate-fade-in"
-                        disabled={optionSubmitting === option.start_time}
-                        onClick={() => handleApplyOption(option)}
-                      >
-                        {optionSubmitting === option.start_time ? 'Applying...' : 'Choose Slot'}
-                      </Button>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

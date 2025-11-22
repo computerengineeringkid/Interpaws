@@ -14,7 +14,11 @@ from . import models, schemas
 from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCreate, StaffUpdate, BookingUpdate
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
-from .ai_services import get_embedding, get_ollama_recommendation
+from .ai_services import (
+    extract_json_payload,
+    get_embedding,
+    get_ollama_recommendation,
+)
 from .agent import InterpawsAgent
 from .agent.tools import AgentTools
 from .auth import (
@@ -105,19 +109,16 @@ def _extract_json_payload(raw: Optional[str]) -> Optional[dict]:
     """Best-effort JSON extraction so we can recover from LLM formatting drift."""
     if not raw:
         return None
+
+    repaired = extract_json_payload(raw)
+    if repaired:
+        return repaired
+
+    # Final defensive catch-all if the repair helper cannot recover data
     try:
         return json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        start_match = re.search(r"\{", raw)
-        end_match = None
-        for match in re.finditer(r"\}", raw):
-            end_match = match
-        if start_match and end_match and end_match.end() > start_match.start():
-            try:
-                return json.loads(raw[start_match.start(): end_match.end()])
-            except json.JSONDecodeError:
-                return None
-    return None
+        return None
 
 
 def _normalize_slots(tool_output: Optional[dict]) -> List[schemas.SuggestedSlot]:

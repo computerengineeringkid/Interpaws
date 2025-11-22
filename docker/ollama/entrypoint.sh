@@ -1,7 +1,7 @@
 #!/bin/sh
 set -euo pipefail
 
-MODEL_ID="qwen2.5:7b"
+MODEL_ID=${OLLAMA_MODEL_ID:-"llama3"}
 
 # Start Ollama in the background so the CLI can talk to it for pulls
 ollama serve &

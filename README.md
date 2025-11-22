@@ -21,6 +21,7 @@ Interpaws is a comprehensive, AI-powered veterinary practice management system (
 - **[Setup Guide](SETUP_GUIDE.md)** - Detailed setup instructions
 - **[Days 12-14 Summary](DAYS_12-14_SUMMARY.md)** - Latest implementation details
 - **[API Documentation](http://localhost:8000/docs)** - Interactive API docs (when running)
+- **[Archived Sprint Docs](docs/archive)** - Historical SPRINT_7 and SPRINT8 reports
 
 ## 🏗️ Tech Stack
 
@@ -194,7 +195,7 @@ docker-compose up -d
 ### AI & Intelligence
 
 - ✅ **Vector Embeddings** - semantic matching of complaints to staff skills
-- ✅ **LLM Integration** - Ollama for natural language responses
+- ✅ **LLM Integration** - Ollama (qwen2.5:7b) for natural language responses
 - ✅ **Smart Recommendations** - AI-suggested staff based on pet needs
 - ✅ **Feedback Loop** - Track successful matches for model improvement
 - ✅ **Wellness Outreach** - Proactive client engagement with AI-generated emails

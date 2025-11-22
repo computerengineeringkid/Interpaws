@@ -36,6 +36,7 @@ Protocol:
 6. Once the user selects a time, use 'manage_booking' WITH 'preferred_time' to finalize the booking.
 7. Always respond with a friendly, professional tone.
 8. Output ONLY JSON for tool calls.
+9. If you output JSON, do not wrap it in markdown code blocks. Output raw JSON only.
 """
 
 
@@ -91,10 +92,20 @@ class InterpawsAgent:
         if not response_text:
             return None
 
+        cleaned_response = response_text.strip()
+
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[len("```json") :].strip()
+        elif cleaned_response.startswith("```"):
+            cleaned_response = cleaned_response[3:].strip()
+
+        if cleaned_response.endswith("```"):
+            cleaned_response = cleaned_response[:-3].strip()
+
         try:
-            start = response_text.index("{")
-            end = response_text.rindex("}") + 1
-            candidate = response_text[start:end]
+            start = cleaned_response.index("{")
+            end = cleaned_response.rindex("}") + 1
+            candidate = cleaned_response[start:end]
             payload = json.loads(candidate)
         except (ValueError, json.JSONDecodeError):
             return None

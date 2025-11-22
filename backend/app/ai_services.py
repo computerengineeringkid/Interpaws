@@ -8,6 +8,8 @@ import asyncio
 # Initialize the embedding model once as a global instance to be reused
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
+
 # Get Ollama host from environment
 ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
@@ -31,7 +33,7 @@ def get_embedding(text: str) -> list[float]:
 
 async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str:
     """
-    Get a recommendation from Ollama using the qwen3:8b model.
+    Get a recommendation from Ollama using the standard qwen2.5:7b model.
 
     This is a placeholder function to ensure the Ollama connection works.
 
@@ -50,7 +52,7 @@ async def get_ollama_recommendation(prompt: str, json_mode: bool = False) -> str
     try:
         response = await asyncio.wait_for(
             ollama_client.chat(
-                model="qwen2.5:7b",
+                model=DEFAULT_OLLAMA_MODEL,
                 messages=[
                     {
                         "role": "user",

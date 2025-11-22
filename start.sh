@@ -17,21 +17,12 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # Check for Port Conflict (Ollama)
-# This prevents the "bind: address already in use" crash
-if lsof -Pi :11434 -sTCP:LISTEN -t >/dev/null ; then
-    echo -e "\033[0;33m⚠️  Warning: Port 11434 is already in use.\033[0m"
-    echo "   This is usually the local Ollama desktop app."
-    echo "   It will block the Docker AI service."
-    echo ""
-    read -p "   Do you want to attempt to close it automatically? (y/n) " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        pkill ollama
-        echo "   ✅ Ollama app closed."
-    else
-        echo "   ❌ Cannot proceed with port conflict. Exiting."
-        exit 1
-    fi
+# Host port 11435 is used to avoid clashing with local Ollama desktop instances
+if lsof -Pi :11435 -sTCP:LISTEN -t >/dev/null ; then
+    echo -e "\033[0;33m⚠️  Warning: Port 11435 is already in use.\033[0m"
+    echo "   The bundled Ollama container needs this port."
+    echo "   Please free it (or update the port mapping) before continuing."
+    exit 1
 fi
 
 # 2. STARTUP LOGIC
@@ -56,6 +47,13 @@ if [ -z "$SENDGRID_API_KEY" ]; then
 fi
 
 docker-compose up -d $BUILD_FLAG
+
+# Ensure the standard model is present
+echo -e "\n🤖 Pulling standard Ollama model (qwen2.5:7b)..."
+if ! docker-compose exec ollama ollama pull qwen2.5:7b; then
+    echo -e "\033[0;33m⚠️  Warning: Unable to pull qwen2.5:7b automatically.\033[0m"
+    echo "   Please run 'docker-compose exec ollama ollama pull qwen2.5:7b' manually after containers are healthy."
+fi
 
 # 3. HEALTH CHECKS
 # -----------------------------------------------------------
@@ -86,6 +84,7 @@ check_service "http://localhost:3000" "Frontend UI"
 FRONTEND_STATUS=$?
 
 echo ""
+
 if [ $BACKEND_STATUS -eq 0 ] && [ $FRONTEND_STATUS -eq 0 ]; then
     echo -e "\033[0;32m✅ SYSTEM OPERATIONAL\033[0m"
     echo "----------------------------------"

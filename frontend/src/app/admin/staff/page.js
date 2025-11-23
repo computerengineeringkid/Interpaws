@@ -37,6 +37,11 @@ function StaffManagementContent() {
   });
 
   const fetchStaff = async () => {
+    if (!adminToken) {
+      setIsLoading(false);
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
 
@@ -64,9 +69,12 @@ function StaffManagementContent() {
 
   useEffect(() => {
     // FIX: Check for adminToken
-    if (adminToken) {
-      fetchStaff();
+    if (!adminToken) {
+      setIsLoading(false);
+      return;
     }
+    
+    fetchStaff();
   }, [adminToken]);
 
   const handleSubmit = async (e) => {

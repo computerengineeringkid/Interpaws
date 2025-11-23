@@ -1,9 +1,66 @@
 "use client";
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card"; // We will use Card style for the table container
+import { Card } from "@/components/ui/card";
+import { useAuth } from "@/context/AuthContext";
 
-export default function AdminBookingList({ bookings = [], onDelete }) {
+export default function AdminBookingList({ selectedDate, setCancellationSuggestions }) {
+  const { adminToken } = useAuth();
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!adminToken || !selectedDate) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchBookings = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        const response = await fetch(`/api/bookings/${dateStr}`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+          throw new Error(errorData.detail || `Failed to fetch bookings: ${response.status}`);
+        }
+        const data = await response.json();
+        setBookings(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Error fetching bookings:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBookings();
+  }, [adminToken, selectedDate]);
+
+  const handleDelete = async (bookingId) => {
+    if (!confirm("Are you sure you want to cancel this booking?")) return;
+
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      if (!response.ok) throw new Error("Failed to cancel booking");
+      
+      // Refresh bookings
+      setBookings(bookings.filter(b => b.id !== bookingId));
+    } catch (err) {
+      console.error("Error cancelling booking:", err);
+      alert("Failed to cancel booking: " + err.message);
+    }
+  };
+  
   // Helper for time formatting
   const formatTime = (dateString) => {
     if (!dateString) return "N/A";
@@ -13,6 +70,25 @@ export default function AdminBookingList({ bookings = [], onDelete }) {
       hour12: true
     });
   };
+
+  if (loading) {
+    return (
+      <Card className="flex flex-col items-center justify-center p-12 text-center bg-white">
+        <div className="h-12 w-12 bg-zinc-100 rounded-full flex items-center justify-center mb-4 text-xl animate-pulse">📅</div>
+        <p className="text-sm text-zinc-500">Loading appointments...</p>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="flex flex-col items-center justify-center p-12 text-center bg-white border-red-200">
+        <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center mb-4 text-xl">⚠️</div>
+        <h3 className="text-lg font-medium text-red-900">Error loading appointments</h3>
+        <p className="text-sm text-red-600">{error}</p>
+      </Card>
+    );
+  }
 
   if (!bookings || bookings.length === 0) {
     return (
@@ -98,17 +174,15 @@ export default function AdminBookingList({ bookings = [], onDelete }) {
 
               {/* Actions */}
               <td className="py-4 px-4 text-right">
-                {onDelete && (
-                  <button 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(booking.id);
-                    }}
-                    className="text-zinc-400 hover:text-red-600 text-xs font-medium px-2 py-1 rounded transition-colors"
-                  >
-                    Cancel
-                  </button>
-                )}
+                <button 
+                  onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(booking.id);
+                  }}
+                  className="text-zinc-400 hover:text-red-600 text-xs font-medium px-2 py-1 rounded transition-colors"
+                >
+                  Cancel
+                </button>
               </td>
             </tr>
           )})}

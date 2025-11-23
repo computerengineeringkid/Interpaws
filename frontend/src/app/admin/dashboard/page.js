@@ -31,9 +31,17 @@ function AdminDashboardContent() {
   const [forecastItems, setForecastItems] = useState([]);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastError, setForecastError] = useState(null);
+  
+  // Stats state
+  const [todayBookings, setTodayBookings] = useState([]);
+  const [todaySurgeries, setTodaySurgeries] = useState([]);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
-    if (!adminToken) return;
+    if (!adminToken) {
+      setForecastLoading(false);
+      return;
+    }
 
     const fetchForecast = async () => {
       setForecastLoading(true);
@@ -57,8 +65,61 @@ function AdminDashboardContent() {
     fetchForecast();
   }, [adminToken]);
 
+  // Fetch today's bookings and surgeries for stats
+  useEffect(() => {
+    if (!adminToken) {
+      setStatsLoading(false);
+      return;
+    }
+
+    const fetchStats = async () => {
+      setStatsLoading(true);
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Fetch bookings for today
+        const bookingsResponse = await fetch(`/api/bookings/${today}`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        
+        if (bookingsResponse.ok) {
+          const bookingsData = await bookingsResponse.json();
+          setTodayBookings(Array.isArray(bookingsData) ? bookingsData : []);
+        }
+
+        // Fetch surgeries for today
+        const surgeriesResponse = await fetch(`/api/surgeries/?date=${today}`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        
+        if (surgeriesResponse.ok) {
+          const surgeriesData = await surgeriesResponse.json();
+          setTodaySurgeries(Array.isArray(surgeriesData) ? surgeriesData : []);
+        }
+      } catch (err) {
+        console.error("Error fetching stats:", err);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, [adminToken]);
+
   // Count low stock items for the stats card
   const lowStockCount = forecastItems.filter(i => i.days_remaining < 7).length;
+  
+  // Calculate stats
+  const pendingBookings = todayBookings.filter(b => b.status === 'pending').length;
+  const nextSurgery = todaySurgeries
+    .filter(s => new Date(s.start_time) > new Date())
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))[0];
+  
+  // Calculate revenue estimate (basic calculation based on bookings)
+  const estimatedRevenue = todayBookings.reduce((sum, booking) => {
+    // Rough estimate: $100 per booking
+    return sum + 100;
+  }, 0);
 
   return (
     <div className="space-y-8">
@@ -76,28 +137,32 @@ function AdminDashboardContent() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard 
           title="Appointments Today" 
-          value="12" 
+          value={statsLoading ? "..." : todayBookings.length.toString()} 
           icon={CalendarCheck} 
-          description="4 pending confirmation"
+          description={pendingBookings > 0 ? `${pendingBookings} pending confirmation` : "All confirmed"}
         />
         <StatsCard 
           title="Surgery Schedule" 
-          value="3" 
+          value={statsLoading ? "..." : todaySurgeries.length.toString()} 
           icon={Clock} 
-          description="Next: Spay at 2:00 PM"
+          description={
+            nextSurgery 
+              ? `Next: ${nextSurgery.surgery_type || 'Surgery'} at ${new Date(nextSurgery.start_time).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`
+              : todaySurgeries.length > 0 ? "All surgeries completed" : "No surgeries scheduled"
+          }
         />
         <StatsCard 
           title="Low Stock Alerts" 
-          value={lowStockCount.toString()} 
+          value={forecastLoading ? "..." : lowStockCount.toString()} 
           icon={AlertCircle} 
           description="Items < 7 days remaining"
-          trend="negative"
+          trend={lowStockCount > 0 ? "negative" : undefined}
         />
         <StatsCard 
           title="Revenue Est." 
-          value="$3,240" 
+          value={statsLoading ? "..." : `$${estimatedRevenue.toLocaleString()}`} 
           icon={TrendingUp} 
-          description="+12% from yesterday"
+          description={todayBookings.length > 0 ? `From ${todayBookings.length} appointments` : "No appointments today"}
           trend="positive"
         />
       </div>
@@ -192,8 +257,7 @@ function AdminDashboardContent() {
                     <h2 className="text-lg font-semibold">Schedule for {selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric'})}</h2>
                 </div>
                 <AdminBookingList 
-                    selectedDate={selectedDate} 
-                    setCancellationSuggestions={setCancellationSuggestions}
+                    selectedDate={selectedDate}
                 />
             </Card>
         </div>

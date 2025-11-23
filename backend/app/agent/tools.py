@@ -255,7 +255,7 @@ class AgentTools:
         except Exception as exc:
             return {"status": "error", "message": f"Error checking schedule: {exc}"}
 
-    def manage_booking(
+    async def manage_booking(
         self,
         pet_name: str,
         owner_name: str,
@@ -270,7 +270,8 @@ class AgentTools:
         if not client:
             return pet_or_error
 
-        service_type, rationale, staff_matches = self._infer_service_and_staff(complaint_description)
+        # Fix: Added 'await' here
+        service_type, rationale, staff_matches = await self._infer_service_and_staff(complaint_description)
         if not staff_matches:
             return {"status": "error", "message": "No suitable staff found for this complaint."}
 

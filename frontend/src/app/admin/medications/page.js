@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { parseErrorResponse } from "@/utils/api";
 
 export default function MedicationManagementPage() {
   return (
@@ -109,7 +110,7 @@ function MedicationManagementContent() {
         });
 
         if (!response.ok) {
-          const errData = await response.json();
+          const errData = await parseErrorResponse(response);
           throw new Error(errData.detail || "Failed to create medication");
         }
       }

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { parseErrorResponse } from "@/utils/api";
 
 const CLIENT_TOKEN_KEY = "interpaws_client_token";
 const CLIENT_USER_KEY = "interpaws_client_user";
@@ -49,7 +50,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await parseErrorResponse(response);
         throw new Error(error.detail || "Login failed");
       }
 
@@ -91,7 +92,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await parseErrorResponse(response);
         throw new Error(error.detail || "Admin login failed");
       }
 
@@ -126,7 +127,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await parseErrorResponse(response);
         throw new Error(error.detail || "Registration failed");
       }
 

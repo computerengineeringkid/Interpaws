@@ -11,6 +11,8 @@ export default function AdminNav() {
 
   const navItems = [
     { href: "/admin/dashboard", label: "Dashboard" },
+    { href: "/admin/bookings", label: "Bookings" }, // Added
+    { href: "/admin/clients", label: "Clients" },   // Added
     { href: "/admin/staff", label: "Staff" },
     { href: "/admin/surgeries", label: "Surgeries" },
     { href: "/admin/medications", label: "Medications" },

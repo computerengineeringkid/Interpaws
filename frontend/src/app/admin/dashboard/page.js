@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-// REMOVED: import Navigation from "@/components/Navigation"; 
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
@@ -14,13 +13,6 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 export default function AdminDashboardPage() {
   return (
     <AdminProtectedRoute>
-      {/* The AdminLayout (frontend/src/app/admin/layout.js) already provides:
-         1. The <AdminNav />
-         2. The background color (bg-zinc-50)
-         3. The min-height
-         
-         So we only need to render the content here.
-      */}
       <AdminDashboardContent />
     </AdminProtectedRoute>
   );
@@ -48,14 +40,21 @@ function AdminDashboardContent() {
         });
 
         if (!response.ok) {
-          throw new Error("Failed to fetch inventory forecast");
+          // Gracefully handle errors instead of crashing
+          if (response.status === 401) {
+            setForecastError("Session expired. Please verify your login.");
+            return;
+          }
+          // Try to read the error text from the server if available
+          const errText = await response.text().catch(() => "Unknown error");
+          throw new Error(`Server responded with ${response.status}: ${errText}`);
         }
 
         const data = await response.json();
-        setForecastItems(data);
+        setForecastItems(Array.isArray(data) ? data : []);
       } catch (err) {
-        setForecastError("Unable to load inventory forecast.");
         console.error("Inventory forecast error:", err);
+        setForecastError("Unable to load inventory forecast.");
       } finally {
         setForecastLoading(false);
       }
@@ -70,7 +69,7 @@ function AdminDashboardContent() {
       
       {/* Cancellation Suggestions Banner */}
       {cancellationSuggestions && cancellationSuggestions.suggestions.length > 0 && (
-        <Card className="mb-6 border-l-4 border-l-blue-500 bg-blue-50 dark:bg-blue-950">
+        <Card className="mb-6 border-l-4 border-l-blue-500 bg-blue-50 dark:bg-blue-950 animate-in fade-in slide-in-from-top-2">
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between">
               <div>
@@ -152,14 +151,16 @@ function AdminDashboardContent() {
           <CardDescription>Usage velocity for the last 30 days.</CardDescription>
         </CardHeader>
         <CardContent>
-          {forecastLoading && <p>Analyzing recent inventory usage...</p>}
+          {forecastLoading && <p className="text-sm text-zinc-500">Analyzing recent inventory usage...</p>}
 
           {!forecastLoading && forecastError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{forecastError}</p>
+            <div className="p-3 rounded bg-red-50 text-red-600 text-sm border border-red-100">
+              ⚠️ {forecastError}
+            </div>
           )}
 
           {!forecastLoading && !forecastError && forecastItems.length === 0 && (
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">Inventory healthy.</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-300">No inventory alerts. Stock levels are healthy.</p>
           )}
 
           {!forecastLoading && !forecastError && forecastItems.length > 0 && (

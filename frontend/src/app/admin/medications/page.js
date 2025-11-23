@@ -20,13 +20,13 @@ export default function MedicationManagementPage() {
 }
 
 function MedicationManagementContent() {
-  const { token } = useAuth();
+  // FIX: Use adminToken
+  const { adminToken } = useAuth();
   const [medications, setMedications] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingMedication, setEditingMedication] = useState(null);
 
-  // Form state
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -41,7 +41,8 @@ function MedicationManagementContent() {
     try {
       const response = await fetch("/api/medications/", {
         headers: {
-          Authorization: `Bearer ${token}`,
+          // FIX: Use adminToken
+          Authorization: `Bearer ${adminToken}`,
         },
       });
 
@@ -60,18 +61,23 @@ function MedicationManagementContent() {
   };
 
   useEffect(() => {
-    if (token) {
+    // FIX: Check adminToken
+    if (adminToken) {
       fetchMedications();
     }
-  }, [token]);
+  }, [adminToken]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminToken}`, // FIX: Use adminToken
+      };
+
       if (editingMedication) {
-        // Update existing medication
         const updatePayload = {};
         Object.keys(formData).forEach((key) => {
           if (formData[key] !== "") {
@@ -81,20 +87,13 @@ function MedicationManagementContent() {
 
         const response = await fetch(`/api/medications/${editingMedication.id}`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers,
           body: JSON.stringify(updatePayload),
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to update medication");
-        }
-
+        if (!response.ok) throw new Error("Failed to update medication");
         setEditingMedication(null);
       } else {
-        // Create new medication
         const payload = {
           ...formData,
           stock_quantity: parseInt(formData.stock_quantity) || 0,
@@ -102,10 +101,7 @@ function MedicationManagementContent() {
 
         const response = await fetch("/api/medications/", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers,
           body: JSON.stringify(payload),
         });
 
@@ -115,21 +111,33 @@ function MedicationManagementContent() {
         }
       }
 
-      // Reset form
-      setFormData({
-        name: "",
-        description: "",
-        stock_quantity: "",
-        unit: "",
-      });
-
-      // Refresh medications list
+      setFormData({ name: "", description: "", stock_quantity: "", unit: "" });
       fetchMedications();
     } catch (err) {
       setError(err.message);
-      console.error("Error submitting medication:", err);
     }
   };
+
+  const handleDelete = async (medicationId) => {
+    if (!window.confirm("Are you sure you want to delete this medication?")) return;
+
+    try {
+      const response = await fetch(`/api/medications/${medicationId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${adminToken}`, // FIX: Use adminToken
+        },
+      });
+
+      if (!response.ok) throw new Error("Failed to delete medication");
+      fetchMedications();
+    } catch (err) {
+      setError("Failed to delete medication.");
+    }
+  };
+
+  // ... (Rest of the render logic remains the same, just showing the fixed logic above)
+  // I will include the full render for completeness so you can copy-paste the whole file safely.
 
   const handleEdit = (medication) => {
     setEditingMedication(medication);
@@ -143,36 +151,7 @@ function MedicationManagementContent() {
 
   const handleCancelEdit = () => {
     setEditingMedication(null);
-    setFormData({
-      name: "",
-      description: "",
-      stock_quantity: "",
-      unit: "",
-    });
-  };
-
-  const handleDelete = async (medicationId) => {
-    if (!window.confirm("Are you sure you want to delete this medication?")) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/medications/${medicationId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete medication");
-      }
-
-      fetchMedications();
-    } catch (err) {
-      setError("Failed to delete medication.");
-      console.error("Error deleting medication:", err);
-    }
+    setFormData({ name: "", description: "", stock_quantity: "", unit: "" });
   };
 
   return (
@@ -188,12 +167,9 @@ function MedicationManagementContent() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Create/Edit Medication Form */}
         <Card>
           <CardHeader>
-            <CardTitle>
-              {editingMedication ? "Edit Medication" : "Add Medication"}
-            </CardTitle>
+            <CardTitle>{editingMedication ? "Edit Medication" : "Add Medication"}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -207,7 +183,6 @@ function MedicationManagementContent() {
                   required
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
@@ -218,7 +193,6 @@ function MedicationManagementContent() {
                   rows={3}
                 />
               </div>
-
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="stock_quantity">Stock Quantity *</Label>
@@ -227,9 +201,7 @@ function MedicationManagementContent() {
                     type="number"
                     min="0"
                     value={formData.stock_quantity}
-                    onChange={(e) =>
-                      setFormData({ ...formData, stock_quantity: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, stock_quantity: e.target.value })}
                     required
                   />
                 </div>
@@ -244,31 +216,23 @@ function MedicationManagementContent() {
                   />
                 </div>
               </div>
-
               <div className="flex gap-2">
                 <Button type="submit" className="flex-1">
                   {editingMedication ? "Update Medication" : "Add Medication"}
                 </Button>
                 {editingMedication && (
-                  <Button type="button" variant="outline" onClick={handleCancelEdit}>
-                    Cancel
-                  </Button>
+                  <Button type="button" variant="outline" onClick={handleCancelEdit}>Cancel</Button>
                 )}
               </div>
             </form>
           </CardContent>
         </Card>
 
-        {/* Medication List */}
         <Card>
-          <CardHeader>
-            <CardTitle>Inventory</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Inventory</CardTitle></CardHeader>
           <CardContent>
             {isLoading && <p>Loading...</p>}
-
             {!isLoading && medications.length === 0 && <p>No medications in inventory.</p>}
-
             {!isLoading && medications.length > 0 && (
               <div className="overflow-x-auto">
                 <Table>
@@ -285,33 +249,15 @@ function MedicationManagementContent() {
                       <TableRow key={medication.id}>
                         <TableCell className="font-medium">{medication.name}</TableCell>
                         <TableCell>
-                          <span
-                            className={
-                              medication.stock_quantity < 10
-                                ? "text-red-600 font-semibold"
-                                : ""
-                            }
-                          >
+                          <span className={medication.stock_quantity < 10 ? "text-red-600 font-semibold" : ""}>
                             {medication.stock_quantity}
                           </span>
                         </TableCell>
                         <TableCell>{medication.unit}</TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleEdit(medication)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDelete(medication.id)}
-                            >
-                              Delete
-                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleEdit(medication)}>Edit</Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDelete(medication.id)}>Delete</Button>
                           </div>
                         </TableCell>
                       </TableRow>

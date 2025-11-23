@@ -20,9 +20,10 @@ export default function StaffManagementPage() {
 }
 
 function StaffManagementContent() {
-  const { token } = useAuth();
+  // FIX: Use adminToken instead of token
+  const { adminToken } = useAuth();
   const [staff, setStaff] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start as true to avoid flash of "No staff found"
   const [error, setError] = useState(null);
   const [editingStaff, setEditingStaff] = useState(null);
 
@@ -42,7 +43,8 @@ function StaffManagementContent() {
     try {
       const response = await fetch("/api/staff/", {
         headers: {
-          Authorization: `Bearer ${token}`,
+          // FIX: Use adminToken in header
+          Authorization: `Bearer ${adminToken}`,
         },
       });
 
@@ -61,10 +63,11 @@ function StaffManagementContent() {
   };
 
   useEffect(() => {
-    if (token) {
+    // FIX: Check for adminToken
+    if (adminToken) {
       fetchStaff();
     }
-  }, [token]);
+  }, [adminToken]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -82,7 +85,8 @@ function StaffManagementContent() {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            // FIX: Use adminToken
+            Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify(updatePayload),
         });
@@ -98,7 +102,8 @@ function StaffManagementContent() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            // FIX: Use adminToken
+            Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify(formData),
         });
@@ -157,7 +162,8 @@ function StaffManagementContent() {
       const response = await fetch(`/api/staff/${staffId}`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
+          // FIX: Use adminToken
+          Authorization: `Bearer ${adminToken}`,
         },
       });
 

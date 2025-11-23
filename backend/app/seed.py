@@ -12,6 +12,7 @@ Usage:
     python -m app.seed
 """
 
+import asyncio
 import random
 from datetime import datetime, timedelta
 from typing import List
@@ -168,7 +169,7 @@ def create_staff(db: Session, count: int = 15) -> List[models.Staff]:
         skills_description = random.choice(STAFF_SKILLS[role])
         
         # Generate embedding for skills
-        skills_vector = get_embedding(skills_description)
+        skills_vector = asyncio.run(get_embedding(skills_description))
         
         staff = models.Staff(
             name=name,
@@ -263,7 +264,7 @@ def create_preferences(db: Session, clients: List[models.Client]) -> List[models
         details = random.choice(CLIENT_PREFERENCES)
         
         # Generate embedding for preferences
-        details_vector = get_embedding(details)
+        details_vector = asyncio.run(get_embedding(details))
         
         preference = models.Preferences(
             details=details,
@@ -327,7 +328,7 @@ def create_bookings(
         if random.random() < 0.7:
             complaint_reason = random.choice(COMPLAINT_REASONS)
             # Generate embedding for complaint
-            complaint_vector = get_embedding(complaint_reason)
+            complaint_vector = asyncio.run(get_embedding(complaint_reason))
         
         booking = models.Booking(
             start_time=start_time,

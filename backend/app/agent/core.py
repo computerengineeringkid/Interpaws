@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -111,7 +112,7 @@ class InterpawsAgent:
 
             if not agent_decision:
                 # LLM didn't follow format - fall back to deterministic routing
-                fallback = self._keyword_fallback(complaint_hint)
+                fallback = await self._keyword_fallback(complaint_hint)
                 conversation_history.append({"role": "assistant", "content": fallback["response"]})
                 if session_id:
                     self.save_conversation(session_id, conversation_history)
@@ -141,7 +142,7 @@ class InterpawsAgent:
             
             # Execute tool
             if action in ["propose_slots", "manage_booking", "check_schedule", "check_inventory", "find_staff"]:
-                tool_result = self._execute_tool(action, action_input)
+                tool_result = await self._execute_tool(action, action_input)
                 last_tool_output = tool_result
                 print(f"Tool Result: {tool_result}")
                 
@@ -163,7 +164,7 @@ class InterpawsAgent:
         # Max turns reached - synthesize from tool output
         result = self._emergency_synthesis(user_message, last_tool_output)
         if not result.get("response"):
-            result = self._keyword_fallback(complaint_hint)
+            result = await self._keyword_fallback(complaint_hint)
         if session_id:
             conversation_history.append({"role": "assistant", "content": result["response"]})
             self.save_conversation(session_id, conversation_history)
@@ -215,19 +216,24 @@ class InterpawsAgent:
         print(f"Retry response: {retry_response[:200]}...")
         return self._parse_agent_decision(retry_response)
 
-    def _execute_tool(self, tool_name: str, tool_input: Any) -> Any:
+    async def _execute_tool(self, tool_name: str, tool_input: Any) -> Any:
         """Execute a tool and return the result."""
         if not hasattr(self.tools, tool_name):
             return {"status": "error", "message": f"Unknown tool: {tool_name}"}
-        
+
         tool_fn = getattr(self.tools, tool_name)
-        
+
         try:
             # Handle different input formats
             if isinstance(tool_input, dict):
-                return tool_fn(**tool_input)
+                result = tool_fn(**tool_input)
             else:
-                return tool_fn(tool_input)
+                result = tool_fn(tool_input)
+
+            if asyncio.iscoroutine(result):
+                return await result
+
+            return result
         except TypeError as e:
             return {"status": "error", "message": f"Invalid arguments: {str(e)}"}
         except Exception as exc:
@@ -322,11 +328,11 @@ class InterpawsAgent:
             "tool_output": last_tool_output
         }
 
-    def _keyword_fallback(self, complaint_text: str) -> Dict[str, Any]:
+    async def _keyword_fallback(self, complaint_text: str) -> Dict[str, Any]:
         """Deterministic v2-style routing when JSON parsing fails."""
         complaint = complaint_text or ""
         service_type, rationale = infer_service_type(complaint)
-        staff_matches = self.tools.find_staff(complaint)
+        staff_matches = await self.tools.find_staff(complaint)
         staff_list = [] if isinstance(staff_matches, dict) else staff_matches
         staff_str = ", ".join([staff.get("name", "staff") for staff in staff_list])
         if not staff_str:

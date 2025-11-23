@@ -22,10 +22,10 @@ class AgentTools:
     def __init__(self, db: Session):
         self.db = db
 
-    def find_staff(self, query: str) -> List[Dict[str, Any]]:
+    async def find_staff(self, query: str) -> List[Dict[str, Any]]:
         """Find the top two staff members by semantic similarity to the query."""
         try:
-            embedding = get_embedding(query)
+            embedding = await get_embedding(query)
             staff_results = (
                 self.db.query(models.Staff)
                 .order_by(models.Staff.skills_vector.l2_distance(embedding))
@@ -72,9 +72,9 @@ class AgentTools:
 
         return client, pets[0]
 
-    def _infer_service_and_staff(self, complaint_description: str, provided_service: str | None = None) -> Tuple[str, str, List[Dict[str, Any]]]:
+    async def _infer_service_and_staff(self, complaint_description: str, provided_service: str | None = None) -> Tuple[str, str, List[Dict[str, Any]]]:
         service_type, rationale = infer_service_type(complaint_description, provided_service)
-        staff_matches = self.find_staff(f"{service_type}: {complaint_description}")
+        staff_matches = await self.find_staff(f"{service_type}: {complaint_description}")
         if isinstance(staff_matches, dict):
             return service_type, rationale, []
         return service_type, rationale, staff_matches
@@ -178,12 +178,12 @@ class AgentTools:
         
         return result
 
-    def propose_slots(self, pet_name: str, owner_name: str, complaint_description: str) -> Dict[str, Any]:
+    async def propose_slots(self, pet_name: str, owner_name: str, complaint_description: str) -> Dict[str, Any]:
         client, pet_or_error = self._resolve_client_and_pet(owner_name, pet_name)
         if not client:
             return pet_or_error
 
-        service_type, rationale, staff_matches = self._infer_service_and_staff(complaint_description)
+        service_type, rationale, staff_matches = await self._infer_service_and_staff(complaint_description)
         if not staff_matches:
             return {"status": "error", "message": "No suitable staff found for this complaint."}
 

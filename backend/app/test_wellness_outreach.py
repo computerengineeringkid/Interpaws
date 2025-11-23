@@ -146,7 +146,7 @@ def create_test_data(db: Session):
     pref = Preferences(
         client_id=client3.id,
         details=pref_text,
-        details_vector=get_embedding(pref_text)
+        details_vector=asyncio.run(get_embedding(pref_text))
     )
     db.add(pref)
     db.commit()

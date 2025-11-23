@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Navigation from "@/components/Navigation";
+// REMOVED: import Navigation from "@/components/Navigation"; 
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
@@ -14,10 +14,14 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 export default function AdminDashboardPage() {
   return (
     <AdminProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
-        <Navigation />
-        <AdminDashboardContent />
-      </div>
+      {/* The AdminLayout (frontend/src/app/admin/layout.js) already provides:
+         1. The <AdminNav />
+         2. The background color (bg-zinc-50)
+         3. The min-height
+         
+         So we only need to render the content here.
+      */}
+      <AdminDashboardContent />
     </AdminProtectedRoute>
   );
 }

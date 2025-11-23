@@ -1,12 +1,12 @@
-"""Hybrid Agent Core for Interpaws - BOOKING CAPABLE"""
+"""Hybrid Agent Core for Interpaws - BOOKING CAPABLE and AWAIT FIXED"""
 from __future__ import annotations
 import json
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 from collections import defaultdict
 from app.ai_services import extract_json_payload, get_ollama_recommendation
 from .tools import AgentTools
 from app import models
+from datetime import datetime # Import datetime for target time logic
 
 # Keep track of chat history
 CONVERSATION_MEMORY: Dict[str, List[Dict[str, str]]] = defaultdict(list)
@@ -79,12 +79,12 @@ class InterpawsAgent:
                 "owner_name": owner_name
             }
 
-        # Step C: BOOKING (New!) - If we have a time, BOOK IT.
+        # Step C: BOOKING - If we have a time, BOOK IT.
         if target_time:
-            # Clean up time string if needed
-            booking_result = self.tools.manage_booking(
+            # FIX: Added 'await' here to solve the "cannot unpack non-iterable coroutine object" error
+            booking_result = await self.tools.manage_booking( 
                 pet_name=current_pet,
-                owner_name=owner_name or "Client", # Fallback if owner unknown
+                owner_name=owner_name or "Client", 
                 complaint_description=current_complaint,
                 preferred_time=target_time
             )
@@ -97,13 +97,11 @@ class InterpawsAgent:
                     "complaint_text": current_complaint
                 }
             else:
-                # Booking failed (e.g. slot taken), fall through to show slots again
                 error_msg = booking_result.get("message", "That slot isn't available.")
                 return {
                     "response": f"{error_msg} Here are other available times:",
                     "pet_name": current_pet,
                     "complaint_text": current_complaint
-                    # Will fall through to Step D to show slots
                 }
 
         # Step D: Suggestion - Find Staff & Slots
@@ -117,9 +115,6 @@ class InterpawsAgent:
         
         best_staff = staff_matches[0]
         staff_obj = self.db.query(models.Staff).filter(models.Staff.id == best_staff['id']).first()
-        
-        # Pass client_id if we had it (requires resolving owner), otherwise generic slots
-        # This function already checks client preferences if client_id was passed in a real app
         slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
         
         slot_text = "\n".join([f"- {s['start_time'].strftime('%A %I:%M %p')}" for s in slots[:3]])

@@ -21,7 +21,7 @@ export default function SurgeryManagementPage() {
 }
 
 function SurgeryManagementContent() {
-  // FIX: Use adminToken
+  // CRITICAL FIX: Use adminToken
   const { adminToken } = useAuth();
   const [surgeries, setSurgeries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,6 +51,7 @@ function SurgeryManagementContent() {
   });
 
   const fetchSurgeries = async () => {
+    if (!adminToken) return;
     setIsLoading(true);
     setError(null);
 
@@ -63,7 +64,7 @@ function SurgeryManagementContent() {
       const url = `/api/surgeries/?${params.toString()}`;
       const response = await fetch(url, {
         headers: {
-          // FIX: Use adminToken
+          // CRITICAL FIX: Use adminToken
           Authorization: `Bearer ${adminToken}`,
         },
       });
@@ -95,7 +96,8 @@ function SurgeryManagementContent() {
         const response = await fetch(
           `/api/surgeries/check_inventory?surgery_type=${encodeURIComponent(formData.surgery_type)}`,
           {
-            headers: { Authorization: `Bearer ${adminToken}` }, // FIX: Use adminToken
+            // CRITICAL FIX: Use adminToken
+            headers: { Authorization: `Bearer ${adminToken}` }, 
           }
         );
 
@@ -113,8 +115,6 @@ function SurgeryManagementContent() {
     checkInventory();
   }, [formData.surgery_type, adminToken]);
 
-  // ... (Dictation logic remains same)
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -122,7 +122,8 @@ function SurgeryManagementContent() {
     try {
       const headers = {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${adminToken}`, // FIX: Use adminToken
+        // CRITICAL FIX: Use adminToken
+        Authorization: `Bearer ${adminToken}`, 
       };
 
       if (editingSurgery) {
@@ -165,7 +166,6 @@ function SurgeryManagementContent() {
     }
   };
 
-  // ... (Helpers: handleEdit, handleCancelEdit remain same)
   const handleEdit = (surgery) => {
     setEditingSurgery(surgery);
     setFormData({
@@ -178,6 +178,7 @@ function SurgeryManagementContent() {
       status: surgery.status,
     });
   };
+  
   const handleCancelEdit = () => {
     setEditingSurgery(null);
     setFormData({ pet_id: "", staff_id: "", surgery_type: "", notes: "", start_time: "", end_time: "", status: "Scheduled" });
@@ -188,7 +189,8 @@ function SurgeryManagementContent() {
     try {
       const response = await fetch(`/api/surgeries/${surgeryId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${adminToken}` }, // FIX: Use adminToken
+        // CRITICAL FIX: Use adminToken
+        headers: { Authorization: `Bearer ${adminToken}` }, 
       });
       if (!response.ok) throw new Error("Failed to delete surgery");
       fetchSurgeries();
@@ -197,9 +199,7 @@ function SurgeryManagementContent() {
     }
   };
 
-  // Dictation handlers need adminToken too
   const handleDictateNotes = (surgeryId) => {
-     // ... (Browser API checks)
      if (typeof window === "undefined") return;
      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
      if (!SpeechRecognition) return;
@@ -215,7 +215,8 @@ function SurgeryManagementContent() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${adminToken}`, // FIX: Use adminToken
+            // CRITICAL FIX: Use adminToken
+            Authorization: `Bearer ${adminToken}`, 
           },
           body: JSON.stringify({ raw_transcript: transcript }),
         });
@@ -230,7 +231,6 @@ function SurgeryManagementContent() {
         setIsDictationProcessing(false);
       }
     };
-    // ... rest of dictation logic
     recognition.start();
   };
 
@@ -239,7 +239,6 @@ function SurgeryManagementContent() {
       <h1 className="text-4xl font-bold mb-6 text-zinc-900 dark:text-zinc-50">Surgery Management</h1>
       {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
       
-      {/* The rest of the UI (Filters, Form, List) goes here... keeping structure identical to original, just logic changed above */}
       <div className="grid gap-6">
         <Card>
             <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
@@ -300,7 +299,6 @@ function SurgeryManagementContent() {
              <Card>
                 <CardHeader><CardTitle>Surgeries</CardTitle></CardHeader>
                 <CardContent>
-                    {/* Simplified list view for brevity, original structure preserved in logic */}
                     {isLoading ? <p>Loading...</p> : (
                         <div className="space-y-2">
                             {surgeries.map(s => (

@@ -20,7 +20,7 @@ export default function MedicationManagementPage() {
 }
 
 function MedicationManagementContent() {
-  // FIX: Use adminToken
+  // CRITICAL FIX: Use adminToken
   const { adminToken } = useAuth();
   const [medications, setMedications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,13 +35,14 @@ function MedicationManagementContent() {
   });
 
   const fetchMedications = async () => {
+    if (!adminToken) return;
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await fetch("/api/medications/", {
         headers: {
-          // FIX: Use adminToken
+          // CRITICAL FIX: Use adminToken
           Authorization: `Bearer ${adminToken}`,
         },
       });
@@ -61,7 +62,6 @@ function MedicationManagementContent() {
   };
 
   useEffect(() => {
-    // FIX: Check adminToken
     if (adminToken) {
       fetchMedications();
     }
@@ -74,7 +74,8 @@ function MedicationManagementContent() {
     try {
       const headers = {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${adminToken}`, // FIX: Use adminToken
+        // CRITICAL FIX: Use adminToken
+        Authorization: `Bearer ${adminToken}`,
       };
 
       if (editingMedication) {
@@ -125,7 +126,8 @@ function MedicationManagementContent() {
       const response = await fetch(`/api/medications/${medicationId}`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${adminToken}`, // FIX: Use adminToken
+          // CRITICAL FIX: Use adminToken
+          Authorization: `Bearer ${adminToken}`,
         },
       });
 
@@ -135,9 +137,6 @@ function MedicationManagementContent() {
       setError("Failed to delete medication.");
     }
   };
-
-  // ... (Rest of the render logic remains the same, just showing the fixed logic above)
-  // I will include the full render for completeness so you can copy-paste the whole file safely.
 
   const handleEdit = (medication) => {
     setEditingMedication(medication);

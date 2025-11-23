@@ -6,24 +6,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 
 export default function AdminBookingsPage() {
-  // FIX: Use adminToken
+  // CRITICAL FIX: Use adminToken, NOT token
   const { adminToken } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchBookings = async () => {
+    if (!adminToken) return;
+    
     try {
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
-      const res = await fetch(`/bookings/${today}`, {
-        // FIX: Use adminToken
+      // NOTE: Ideally this endpoint should be /api/admin/bookings or similar if it returns ALL bookings
+      // Assuming /bookings/DATE works for admins too based on your backend logic
+      const res = await fetch(`/api/bookings/${today}`, {
+        // CRITICAL FIX: Use adminToken
         headers: { Authorization: `Bearer ${adminToken}` },
       });
       
       if (!res.ok) throw new Error("Failed to fetch bookings");
       const data = await res.json();
-      setBookings(data);
+      setBookings(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
       setError("Could not load bookings. " + err.message);
@@ -33,16 +37,16 @@ export default function AdminBookingsPage() {
   };
 
   useEffect(() => {
-    // FIX: Check adminToken
     if (adminToken) fetchBookings();
   }, [adminToken]);
 
   const handleDelete = async (id) => {
     if(!confirm("Are you sure you want to cancel this booking?")) return;
     try {
-      const res = await fetch(`/bookings/${id}`, {
+      const res = await fetch(`/api/bookings/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${adminToken}` } // FIX: Use adminToken
+        // CRITICAL FIX: Use adminToken
+        headers: { Authorization: `Bearer ${adminToken}` } 
       });
       if(res.ok) {
         fetchBookings(); 

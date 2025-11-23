@@ -20,10 +20,10 @@ export default function StaffManagementPage() {
 }
 
 function StaffManagementContent() {
-  // FIX: Use adminToken instead of token
+  // CRITICAL FIX: Use adminToken, NOT client token
   const { adminToken } = useAuth();
   const [staff, setStaff] = useState([]);
-  const [isLoading, setIsLoading] = useState(true); // Start as true to avoid flash of "No staff found"
+  const [isLoading, setIsLoading] = useState(true); 
   const [error, setError] = useState(null);
   const [editingStaff, setEditingStaff] = useState(null);
 
@@ -37,10 +37,7 @@ function StaffManagementContent() {
   });
 
   const fetchStaff = async () => {
-    if (!adminToken) {
-      setIsLoading(false);
-      return;
-    }
+    if (!adminToken) return; // Wait for auth
     
     setIsLoading(true);
     setError(null);
@@ -48,7 +45,7 @@ function StaffManagementContent() {
     try {
       const response = await fetch("/api/staff/", {
         headers: {
-          // FIX: Use adminToken in header
+          // CRITICAL FIX: Use adminToken in header
           Authorization: `Bearer ${adminToken}`,
         },
       });
@@ -68,13 +65,11 @@ function StaffManagementContent() {
   };
 
   useEffect(() => {
-    // FIX: Check for adminToken
-    if (!adminToken) {
+    if (adminToken) {
+      fetchStaff();
+    } else {
       setIsLoading(false);
-      return;
     }
-    
-    fetchStaff();
   }, [adminToken]);
 
   const handleSubmit = async (e) => {
@@ -93,7 +88,7 @@ function StaffManagementContent() {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            // FIX: Use adminToken
+            // CRITICAL FIX: Use adminToken
             Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify(updatePayload),
@@ -110,7 +105,7 @@ function StaffManagementContent() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // FIX: Use adminToken
+            // CRITICAL FIX: Use adminToken
             Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify(formData),
@@ -170,7 +165,7 @@ function StaffManagementContent() {
       const response = await fetch(`/api/staff/${staffId}`, {
         method: "DELETE",
         headers: {
-          // FIX: Use adminToken
+          // CRITICAL FIX: Use adminToken
           Authorization: `Bearer ${adminToken}`,
         },
       });

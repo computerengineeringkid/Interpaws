@@ -42,6 +42,8 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   const [petName, setPetName] = useState("");
   const [petOptions, setPetOptions] = useState([]);
   const [petLoading, setPetLoading] = useState(false);
+  const [newPetSpecies, setNewPetSpecies] = useState("Dog");
+  const [newPetBreed, setNewPetBreed] = useState("");
   const [serviceType, setServiceType] = useState(serviceOptions[0].value);
   const [appointmentTime, setAppointmentTime] = useState("");
   const [status, setStatus] = useState(null);
@@ -101,7 +103,11 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
           "Content-Type": "application/json",
           Authorization: `Bearer ${clientToken}`,
         },
-        body: JSON.stringify({ name: petName, species: "Unknown", breed: "" }),
+        body: JSON.stringify({
+          name: petName,
+          species: newPetSpecies,
+          breed: newPetBreed
+        }),
       });
 
       if (!response.ok) {
@@ -197,9 +203,35 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
             </Button>
           ))}
             {!petLoading && petName && petOptions.length === 0 && (
-              <Button type="button" size="sm" variant="outline" onClick={handleCreatePet}>
-                ➕ Create &quot;{petName}&quot;
-              </Button>
+              <div className="mt-3 p-3 border rounded bg-zinc-50 dark:bg-zinc-800 space-y-3 w-full">
+                <div className="space-y-2">
+                  <Label htmlFor="newPetSpecies">Species</Label>
+                  <Select value={newPetSpecies} onValueChange={setNewPetSpecies}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select species" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Dog">Dog</SelectItem>
+                      <SelectItem value="Cat">Cat</SelectItem>
+                      <SelectItem value="Bird">Bird</SelectItem>
+                      <SelectItem value="Rabbit">Rabbit</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newPetBreed">Breed</Label>
+                  <Input
+                    id="newPetBreed"
+                    value={newPetBreed}
+                    onChange={(e) => setNewPetBreed(e.target.value)}
+                    placeholder="Breed (optional)"
+                  />
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={handleCreatePet} className="w-full">
+                  Save &amp; Create Profile for &quot;{petName}&quot;
+                </Button>
+              </div>
             )}
         </div>
       </div>

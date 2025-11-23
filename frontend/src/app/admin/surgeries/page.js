@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { parseErrorResponse } from "@/utils/api";
 
 export default function SurgeryManagementPage() {
   return (
@@ -185,7 +186,7 @@ function SurgeryManagementContent() {
         });
 
         if (!response.ok) {
-          const errData = await response.json();
+          const errData = await parseErrorResponse(response);
           throw new Error(errData.detail || "Failed to create surgery");
         }
       }

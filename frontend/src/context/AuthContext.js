@@ -8,6 +8,7 @@ import { parseErrorResponse } from "@/utils/api";
 const AUTH_TOKEN_KEY = "interpaws_auth_token";
 const AUTH_USER_KEY = "interpaws_auth_user";
 const AUTH_ROLE_KEY = "interpaws_auth_role";
+const REFRESH_TOKEN_KEY = "interpaws_refresh_token";
 
 // Role constants for explicit tracking
 const ROLES = {
@@ -48,6 +49,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(AUTH_USER_KEY);
     localStorage.removeItem(AUTH_ROLE_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
 
     // Also remove legacy keys for backward compatibility cleanup
     localStorage.removeItem("interpaws_client_token");
@@ -83,6 +85,7 @@ export const AuthProvider = ({ children }) => {
 
       const data = await response.json();
       const accessToken = data?.access_token;
+      const refreshToken = data?.refresh_token;
 
       const userResponse = await fetch("/api/clients/me", {
         headers: {
@@ -100,6 +103,9 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData));
       localStorage.setItem(AUTH_ROLE_KEY, ROLES.CLIENT);
+      if (refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      }
 
       // Update state
       setToken(accessToken);
@@ -135,12 +141,16 @@ export const AuthProvider = ({ children }) => {
 
       const data = await response.json();
       const accessToken = data?.access_token;
+      const refreshToken = data?.refresh_token;
       const adminData = { email, role: ROLES.ADMIN };
 
       // Store with explicit role tracking
       localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(adminData));
       localStorage.setItem(AUTH_ROLE_KEY, ROLES.ADMIN);
+      if (refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      }
 
       // Update state
       setToken(accessToken);

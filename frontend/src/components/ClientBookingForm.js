@@ -203,33 +203,42 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
             </Button>
           ))}
             {!petLoading && petName && petOptions.length === 0 && (
-              <div className="mt-3 p-3 border rounded bg-zinc-50 dark:bg-zinc-800 space-y-3 w-full">
-                <div className="space-y-2">
-                  <Label htmlFor="newPetSpecies">Species</Label>
-                  <Select value={newPetSpecies} onValueChange={setNewPetSpecies}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select species" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Dog">Dog</SelectItem>
-                      <SelectItem value="Cat">Cat</SelectItem>
-                      <SelectItem value="Bird">Bird</SelectItem>
-                      <SelectItem value="Rabbit">Rabbit</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="mt-4 p-4 border rounded-lg bg-zinc-50 dark:bg-zinc-800 space-y-3">
+                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Create profile for <span className="font-bold text-indigo-600">{petName}</span>:
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="species-select" className="text-xs">Species</Label>
+                    <Select value={newPetSpecies} onValueChange={setNewPetSpecies}>
+                      <SelectTrigger id="species-select" className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Dog">Dog</SelectItem>
+                        <SelectItem value="Cat">Cat</SelectItem>
+                        <SelectItem value="Bird">Bird</SelectItem>
+                        <SelectItem value="Rabbit">Rabbit</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="breed-input" className="text-xs">Breed</Label>
+                    <Input
+                      id="breed-input"
+                      value={newPetBreed}
+                      onChange={(e) => setNewPetBreed(e.target.value)}
+                      placeholder="e.g. Labrador"
+                      className="h-8"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="newPetBreed">Breed</Label>
-                  <Input
-                    id="newPetBreed"
-                    value={newPetBreed}
-                    onChange={(e) => setNewPetBreed(e.target.value)}
-                    placeholder="Breed (optional)"
-                  />
-                </div>
-                <Button type="button" size="sm" variant="outline" onClick={handleCreatePet} className="w-full">
-                  Save &amp; Create Profile for &quot;{petName}&quot;
+
+                <Button type="button" size="sm" className="w-full" onClick={handleCreatePet}>
+                  Save &amp; Create Profile
                 </Button>
               </div>
             )}

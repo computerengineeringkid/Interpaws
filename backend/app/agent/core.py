@@ -34,25 +34,25 @@ class InterpawsAgent:
         
         # 1. UNDERSTAND: Extract Pet, Complaint, AND Booking Intent
         extraction_prompt = f"""
-        You are a veterinary receptionist.
+        You are an AI Veterinary Assistant. Your goal is to triage the pet's condition safely.
         Current Date/Time: {now_str}
 
         User Message: "{user_message}"
         Context: Pet="{pet_name or 'Unknown'}", Complaint="{complaint_text or 'Unknown'}"
 
-        Task: Extract fields into JSON.
+        Task: Extract medical details. Extract 'pet_species' and 'pet_breed' if mentioned. Infer species from breed (e.g. 'Lab' -> 'Dog', 'Siamese' -> 'Cat'). If the complaint is dangerous (e.g. breathing issues, seizures, bleeding, eating objects), mark 'is_emergency' as true.
         - pet_name: Name of the pet (if mentioned).
         - complaint: Medical issue (if mentioned).
         - target_time: If the user is confirming a slot (e.g. "Book Sunday 9am"), convert it to 'YYYY-MM-DD HH:MM' format. If no specific time is chosen, use null.
-        - Extract pet_species and pet_breed if mentioned. Infer species from breed (e.g. 'Golden Retriever' -> 'Dog', 'Siamese' -> 'Cat').
 
         Return JSON ONLY:
         {{
             "pet_name": "...",
-            "complaint": "...",
-            "target_time": "2025-11-XX 09:00" or null,
             "pet_species": "...",
-            "pet_breed": "..."
+            "pet_breed": "...",
+            "complaint": "...",
+            "is_emergency": true or false,
+            "target_time": "2025-11-XX 09:00" or null
         }}
         """
         
@@ -63,29 +63,40 @@ class InterpawsAgent:
         current_pet = data.get("pet_name") or pet_name
         current_complaint = data.get("complaint") or complaint_text
         target_time = data.get("target_time")
-        pet_species = data.get("pet_species")
-        pet_breed = data.get("pet_breed")
-        
+        current_species = data.get("pet_species")
+        current_breed = data.get("pet_breed")
+        is_emergency = data.get("is_emergency")
+
         # 3. LOGIC FLOW (The "Railroad")
-        
+
+        # Emergency Guard Rail - Check immediately after extraction
+        if is_emergency:
+            return {
+                "response": "⚠️ This sounds like a medical emergency. Please do not wait for an appointment. Take your pet to the nearest emergency veterinary clinic immediately.",
+                "is_emergency": True,
+                "pet_name": current_pet,
+                "pet_species": current_species,
+                "pet_breed": current_breed
+            }
+
         # Step A: Missing Pet Name
         if not current_pet:
             return {
                 "response": "I can help! First, what is your pet's name?",
                 "pet_name": None,
                 "owner_name": owner_name,
-                "pet_species": pet_species,
-                "pet_breed": pet_breed
+                "pet_species": current_species,
+                "pet_breed": current_breed
             }
-            
+
         # Step B: Missing Complaint
         if not current_complaint:
             return {
                 "response": f"Got it, we're checking for {current_pet}. What seems to be the problem?",
                 "pet_name": current_pet,
                 "owner_name": owner_name,
-                "pet_species": pet_species,
-                "pet_breed": pet_breed
+                "pet_species": current_species,
+                "pet_breed": current_breed
             }
 
         # Step C: BOOKING - If we have a time, BOOK IT.
@@ -104,8 +115,8 @@ class InterpawsAgent:
                     "service_type": booking_result.get("service_type"),
                     "pet_name": current_pet,
                     "complaint_text": current_complaint,
-                    "pet_species": pet_species,
-                    "pet_breed": pet_breed
+                    "pet_species": current_species,
+                    "pet_breed": current_breed
                 }
             else:
                 error_msg = booking_result.get("message", "That slot isn't available.")
@@ -113,38 +124,41 @@ class InterpawsAgent:
                     "response": f"{error_msg} Here are other available times:",
                     "pet_name": current_pet,
                     "complaint_text": current_complaint,
-                    "pet_species": pet_species,
-                    "pet_breed": pet_breed
+                    "pet_species": current_species,
+                    "pet_breed": current_breed
                 }
 
         # Step D: Suggestion - Find Staff & Slots
         staff_matches = await self.tools.find_staff(current_complaint)
         if not staff_matches:
-             return {
-                 "response": "I couldn't find a specialist for that issue. Could you describe it differently?",
-                 "pet_name": current_pet,
-                 "complaint_text": current_complaint,
-                 "pet_species": pet_species,
-                 "pet_breed": pet_breed
-             }
-        
+            return {
+                "response": "I couldn't find a specialist for that issue. Could you describe it differently?",
+                "pet_name": current_pet,
+                "complaint_text": current_complaint,
+                "pet_species": current_species,
+                "pet_breed": current_breed
+            }
+
         best_staff = staff_matches[0]
         staff_obj = self.db.query(models.Staff).filter(models.Staff.id == best_staff['id']).first()
         slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
-        
+
         slot_text = "\n".join([f"- {s['start_time'].strftime('%A %I:%M %p')}" for s in slots[:3]])
-        
+
+        # Build pet description with species/breed info
+        pet_description = current_breed or current_species or "pet"
+
         response_msg = (
-            f"For {current_pet}'s {current_complaint}, I recommend Dr. {best_staff['name']} ({best_staff['role']}).\n"
+            f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}).\n"
             f"Available openings:\n{slot_text}\n\n"
             f"Shall I book one? (e.g. 'Yes, Sunday at 9am')"
         )
-        
+
         return {
             "response": response_msg,
             "slots": slots[:3],
             "pet_name": current_pet,
             "complaint_text": current_complaint,
-            "pet_species": pet_species,
-            "pet_breed": pet_breed
+            "pet_species": current_species,
+            "pet_breed": current_breed
         }

@@ -17,7 +17,12 @@ import { Button } from "@/components/ui/button";
 
 export default function AdminSidebar() {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { user, logout, isLoggedIn, isAdmin } = useAuth();
+
+  // Hide sidebar if not logged in or not an admin
+  if (!isLoggedIn || !isAdmin) {
+    return null;
+  }
 
   const navItems = [
     { href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -70,8 +75,8 @@ export default function AdminSidebar() {
                     👨‍⚕️
                 </div>
                 <div className="text-xs">
-                    <p className="font-medium">Dr. Admin</p>
-                    <p className="text-zinc-500">Veterinarian</p>
+                    <p className="font-medium">{user?.name || "Administrator"}</p>
+                    <p className="text-zinc-500">{user?.role || "Staff"}</p>
                 </div>
             </div>
         </div>

@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.security import OAuth2PasswordRequestForm
+from jose import JWTError, jwt
 from sqlalchemy import Date, cast, text, func, desc
 from sqlalchemy.orm import Session
 
@@ -26,9 +27,12 @@ from .auth import (
     authenticate_client,
     authenticate_staff,
     create_access_token,
+    create_refresh_token,
     get_current_user,
     get_current_admin_user,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    SECRET_KEY,
+    ALGORITHM
 )
 from .service_catalog import get_service_duration_minutes, infer_service_type
 
@@ -188,7 +192,7 @@ def register_client(client: schemas.ClientCreate, db: Session = Depends(get_db))
 
 @app.post("/token", response_model=schemas.Token, tags=["Authentication"])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login endpoint to get an access token."""
+    """Login endpoint to get access and refresh tokens."""
     client = authenticate_client(db, form_data.username, form_data.password)
     if not client:
         raise HTTPException(
@@ -196,17 +200,18 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": client.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = create_refresh_token(data={"sub": client.email})
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 
 
 @app.post("/staff/login", response_model=schemas.Token, tags=["Authentication"])
 def staff_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Staff login endpoint to get an access token for admin users."""
+    """Staff login endpoint to get access and refresh tokens for admin users."""
     staff = authenticate_staff(db, form_data.username, form_data.password)
     if not staff:
         raise HTTPException(
@@ -214,12 +219,42 @@ def staff_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": staff.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = create_refresh_token(data={"sub": staff.email})
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
+
+
+@app.post("/refresh", response_model=schemas.Token, tags=["Authentication"])
+def refresh_token_endpoint(request: schemas.TokenRefreshRequest):
+    """Refresh access token using a valid refresh token."""
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Invalid or expired refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        data={"sub": email}, expires_delta=access_token_expires
+    )
+
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer",
+        "refresh_token": request.refresh_token
+    }
 
 
 @app.get("/clients/me", response_model=schemas.Client, tags=["Authentication"])

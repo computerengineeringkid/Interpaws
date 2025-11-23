@@ -1,30 +1,31 @@
-import { Geist, Geist_Mono } from "next/font/google";
+"use client";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
+import Navigation from "@/components/Navigation";
+import { Toaster } from "@/components/ui/toaster" // Ensure you have this or remove if using a different toaster
+import { usePathname } from "next/navigation";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata = {
-  title: "Interpaws - Veterinary Clinic Booking",
-  description: "Book appointments for your pets with AI-powered recommendations",
-};
+const inter = Inter({ subsets: ["latin"] });
 
 export default function RootLayout({ children }) {
+  const pathname = usePathname();
+  // Hide the main client navigation if we are in the /admin section
+  const isAdmin = pathname?.startsWith("/admin");
+
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={inter.className}>
         <Providers>
-          {children}
+          {/* Only show Client Navigation if NOT in admin */}
+          {!isAdmin && <Navigation />}
+          
+          <main className={!isAdmin ? "min-h-screen bg-gray-50" : ""}>
+            {children}
+          </main>
+          
+          {/* Assuming you have a Toaster component, keeping it here ensures notifications work everywhere */}
+          {/* <Toaster /> */} 
         </Providers>
       </body>
     </html>

@@ -4,42 +4,65 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseErrorResponse } from "@/utils/api";
 
-const CLIENT_TOKEN_KEY = "interpaws_client_token";
-const CLIENT_USER_KEY = "interpaws_client_user";
-const ADMIN_TOKEN_KEY = "interpaws_admin_token";
-const ADMIN_USER_KEY = "interpaws_admin_user";
+// Single Active Session Storage Keys
+const AUTH_TOKEN_KEY = "interpaws_auth_token";
+const AUTH_USER_KEY = "interpaws_auth_user";
+const AUTH_ROLE_KEY = "interpaws_auth_role";
+
+// Role constants for explicit tracking
+const ROLES = {
+  CLIENT: "client",
+  ADMIN: "admin",
+};
 
 const AuthContext = createContext(null);
 
 export { AuthContext };
 
 export const AuthProvider = ({ children }) => {
-  const [clientSession, setClientSession] = useState({ token: null, user: null });
-  const [adminSession, setAdminSession] = useState({ token: null, user: null });
+  const [session, setSession] = useState({ token: null, user: null, role: null });
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Initialize session from localStorage on mount
   useEffect(() => {
-    const storedClientToken = localStorage.getItem(CLIENT_TOKEN_KEY);
-    const storedClientUser = localStorage.getItem(CLIENT_USER_KEY);
-    const storedAdminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
-    const storedAdminUser = localStorage.getItem(ADMIN_USER_KEY);
+    const storedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    const storedUser = localStorage.getItem(AUTH_USER_KEY);
+    const storedRole = localStorage.getItem(AUTH_ROLE_KEY);
 
-    setClientSession({
-      token: storedClientToken || null,
-      user: storedClientUser ? JSON.parse(storedClientUser) : null,
-    });
-
-    setAdminSession({
-      token: storedAdminToken || null,
-      user: storedAdminUser ? JSON.parse(storedAdminUser) : null,
-    });
+    if (storedToken && storedRole) {
+      setSession({
+        token: storedToken,
+        user: storedUser ? JSON.parse(storedUser) : null,
+        role: storedRole,
+      });
+    }
 
     setLoading(false);
   }, []);
 
+  // Clear all session data - ensures clean state before any new login
+  const clearAllSessions = () => {
+    // Remove current unified session keys
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    localStorage.removeItem(AUTH_ROLE_KEY);
+
+    // Also remove legacy keys for backward compatibility cleanup
+    localStorage.removeItem("interpaws_client_token");
+    localStorage.removeItem("interpaws_client_user");
+    localStorage.removeItem("interpaws_admin_token");
+    localStorage.removeItem("interpaws_admin_user");
+
+    setSession({ token: null, user: null, role: null });
+  };
+
+  // Client login - clears any existing session first
   const login = async (email, password) => {
     try {
+      // Auto-cleanup: Clear all existing sessions before new login
+      clearAllSessions();
+
       const formData = new FormData();
       formData.append("username", email);
       formData.append("password", password);
@@ -69,9 +92,16 @@ export const AuthProvider = ({ children }) => {
 
       const userData = await userResponse.json();
 
-      localStorage.setItem(CLIENT_TOKEN_KEY, accessToken);
-      localStorage.setItem(CLIENT_USER_KEY, JSON.stringify(userData));
-      setClientSession({ token: accessToken, user: userData });
+      // Store with explicit role tracking
+      localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData));
+      localStorage.setItem(AUTH_ROLE_KEY, ROLES.CLIENT);
+
+      setSession({
+        token: accessToken,
+        user: userData,
+        role: ROLES.CLIENT,
+      });
 
       return { success: true };
     } catch (error) {
@@ -80,8 +110,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Admin login - clears any existing session first
   const adminLogin = async (email, password) => {
     try {
+      // Auto-cleanup: Clear all existing sessions before new login
+      clearAllSessions();
+
       const formData = new FormData();
       formData.append("username", email);
       formData.append("password", password);
@@ -98,11 +132,18 @@ export const AuthProvider = ({ children }) => {
 
       const data = await response.json();
       const accessToken = data?.access_token;
-      const adminData = { email, role: "admin" };
+      const adminData = { email, role: ROLES.ADMIN };
 
-      localStorage.setItem(ADMIN_TOKEN_KEY, accessToken);
-      localStorage.setItem(ADMIN_USER_KEY, JSON.stringify(adminData));
-      setAdminSession({ token: accessToken, user: adminData });
+      // Store with explicit role tracking
+      localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(adminData));
+      localStorage.setItem(AUTH_ROLE_KEY, ROLES.ADMIN);
+
+      setSession({
+        token: accessToken,
+        user: adminData,
+        role: ROLES.ADMIN,
+      });
 
       return { success: true };
     } catch (error) {
@@ -111,8 +152,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Register new client - clears any existing session first
   const register = async (name, email, password, clinicId = null) => {
     try {
+      // Clear any existing session before registration
+      clearAllSessions();
+
       const response = await fetch("/api/clients", {
         method: "POST",
         headers: {
@@ -138,46 +183,43 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logoutClient = () => {
-    localStorage.removeItem(CLIENT_TOKEN_KEY);
-    localStorage.removeItem(CLIENT_USER_KEY);
-    setClientSession({ token: null, user: null });
-  };
-
-  const logoutAdmin = () => {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-    localStorage.removeItem(ADMIN_USER_KEY);
-    setAdminSession({ token: null, user: null });
-  };
-
+  // Unified logout - completely purges all authentication data
   const logout = () => {
-    logoutClient();
-    logoutAdmin();
+    clearAllSessions();
     router.push("/login");
   };
 
+  // Memoized context value with single session state
   const value = useMemo(() => {
-    const clientToken = clientSession.token;
-    const adminToken = adminSession.token;
+    const { token, user, role } = session;
+
     return {
-      clientToken,
-      clientUser: clientSession.user,
-      adminToken,
-      adminUser: adminSession.user,
+      // Primary session state
+      token,
+      user,
+      userRole: role,
+
+      // Authentication status flags
+      isAuthenticated: !!token && role === ROLES.CLIENT,
+      isAdmin: !!token && role === ROLES.ADMIN,
+      isLoggedIn: !!token,
+
+      // Loading state
       loading,
+
+      // Auth actions
       login,
       adminLogin,
       register,
       logout,
-      logoutAdmin,
-      logoutClient,
-      isAuthenticated: !!clientToken,
-      isAdmin: !!adminToken,
-      token: clientToken,
-      user: clientSession.user,
-      userRole: clientToken ? "client" : adminToken ? "admin" : null,
+
+      // Legacy compatibility aliases (for components that use old names)
+      clientToken: role === ROLES.CLIENT ? token : null,
+      adminToken: role === ROLES.ADMIN ? token : null,
+      clientUser: role === ROLES.CLIENT ? user : null,
+      adminUser: role === ROLES.ADMIN ? user : null,
     };
-  }, [clientSession, adminSession, loading]);
+  }, [session, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -20,7 +20,10 @@ const AuthContext = createContext(null);
 export { AuthContext };
 
 export const AuthProvider = ({ children }) => {
-  const [session, setSession] = useState({ token: null, user: null, role: null });
+  // Unified state management with separate state variables
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState(null); // Values: 'client' | 'admin' | null
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -31,11 +34,9 @@ export const AuthProvider = ({ children }) => {
     const storedRole = localStorage.getItem(AUTH_ROLE_KEY);
 
     if (storedToken && storedRole) {
-      setSession({
-        token: storedToken,
-        user: storedUser ? JSON.parse(storedUser) : null,
-        role: storedRole,
-      });
+      setToken(storedToken);
+      setUser(storedUser ? JSON.parse(storedUser) : null);
+      setRole(storedRole);
     }
 
     setLoading(false);
@@ -54,7 +55,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("interpaws_admin_token");
     localStorage.removeItem("interpaws_admin_user");
 
-    setSession({ token: null, user: null, role: null });
+    // Reset state
+    setToken(null);
+    setUser(null);
+    setRole(null);
   };
 
   // Client login - clears any existing session first
@@ -97,11 +101,10 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData));
       localStorage.setItem(AUTH_ROLE_KEY, ROLES.CLIENT);
 
-      setSession({
-        token: accessToken,
-        user: userData,
-        role: ROLES.CLIENT,
-      });
+      // Update state
+      setToken(accessToken);
+      setUser(userData);
+      setRole(ROLES.CLIENT);
 
       return { success: true };
     } catch (error) {
@@ -139,11 +142,10 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(adminData));
       localStorage.setItem(AUTH_ROLE_KEY, ROLES.ADMIN);
 
-      setSession({
-        token: accessToken,
-        user: adminData,
-        role: ROLES.ADMIN,
-      });
+      // Update state
+      setToken(accessToken);
+      setUser(adminData);
+      setRole(ROLES.ADMIN);
 
       return { success: true };
     } catch (error) {
@@ -189,10 +191,8 @@ export const AuthProvider = ({ children }) => {
     router.push("/login");
   };
 
-  // Memoized context value with single session state
+  // Memoized context value with unified state
   const value = useMemo(() => {
-    const { token, user, role } = session;
-
     return {
       // Primary session state
       token,
@@ -213,13 +213,13 @@ export const AuthProvider = ({ children }) => {
       register,
       logout,
 
-      // Legacy compatibility aliases (for components that use old names)
+      // Legacy compatibility aliases (for Navigation.js and AdminBookingList.js)
       clientToken: role === ROLES.CLIENT ? token : null,
       adminToken: role === ROLES.ADMIN ? token : null,
       clientUser: role === ROLES.CLIENT ? user : null,
       adminUser: role === ROLES.ADMIN ? user : null,
     };
-  }, [session, loading]);
+  }, [token, user, role, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

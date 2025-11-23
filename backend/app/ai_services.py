@@ -1,17 +1,21 @@
 """AI services for embeddings and generative recommendations."""
 
-import os
-import json
 import asyncio
+import json
+import logging
+import os
 import re
 
 import ollama
 from sentence_transformers import SentenceTransformer
 
-# Initialize the embedding model once as a global instance to be reused
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_MODEL = "llama3"  # Stabilized single-model policy
+_EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+_embedding_model: SentenceTransformer | None = None
+_embedding_model_lock = asyncio.Lock()
 
 # Get Ollama host from environment, defaulting to the internal service name
 ollama_host = os.getenv("OLLAMA_HOST", "http://ollama:11434")
@@ -20,17 +24,45 @@ ollama_host = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 ollama_client = ollama.AsyncClient(host=ollama_host)
 
 
-def get_embedding(text: str) -> list[float]:
+async def get_embedding_model() -> SentenceTransformer:
+    """Lazily load and cache the embedding model.
+
+    Ensures only one initialization attempt occurs at a time using an asyncio lock.
+    """
+
+    global _embedding_model
+
+    if _embedding_model is not None:
+        return _embedding_model
+
+    async with _embedding_model_lock:
+        if _embedding_model is not None:
+            return _embedding_model
+
+        try:
+            _embedding_model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
+        except (OSError, RuntimeError):
+            logger.exception(
+                "Failed to load embedding model '%s'. Ensure the model files are available.",
+                _EMBEDDING_MODEL_NAME,
+            )
+            raise
+
+    return _embedding_model
+
+
+async def get_embedding(text: str) -> list[float]:
     """
     Generate an embedding for the given text.
-    
+
     Args:
         text: The input text to encode.
-    
+
     Returns:
         A list of floats representing the embedding vector.
     """
-    embedding = embedding_model.encode(text)
+    model = await get_embedding_model()
+    embedding = model.encode(text)
     return embedding.tolist()
 
 

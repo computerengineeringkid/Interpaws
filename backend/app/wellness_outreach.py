@@ -148,9 +148,9 @@ def find_open_slots(db: Session, days_ahead: int = LOOKAHEAD_DAYS) -> List[dict]
     return open_slots
 
 
-def match_slot_to_preference(
-    client: Client, 
-    open_slots: List[dict], 
+async def match_slot_to_preference(
+    client: Client,
+    open_slots: List[dict],
     db: Session
 ) -> dict:
     """
@@ -187,7 +187,7 @@ def match_slot_to_preference(
     
     for slot in open_slots:
         # Create embedding for slot description
-        slot_embedding = get_embedding(slot["description"])
+        slot_embedding = await get_embedding(slot["description"])
         
         # Calculate L2 distance manually (simple Euclidean distance)
         distance = sum(
@@ -336,7 +336,7 @@ async def process_outreach(db: Session, log_to_file: bool = True) -> dict:
     for pet, client in target_pets:
         try:
             # Match slot to client preference
-            best_slot = match_slot_to_preference(client, open_slots, db)
+            best_slot = await match_slot_to_preference(client, open_slots, db)
             
             if not best_slot:
                 error_msg = f"No slot available for {client.name}'s pet {pet.name}"

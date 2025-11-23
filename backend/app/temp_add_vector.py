@@ -3,6 +3,8 @@ One-time script to seed the database with a staff member's AI-ready skill vector
 This allows testing the complete AI suggestion pipeline.
 """
 
+import asyncio
+
 from sqlalchemy import update
 from .database import SessionLocal
 from .models import Staff
@@ -22,7 +24,7 @@ def add_skill_vector():
         
         # Generate embedding for the skill description
         print(f"Generating embedding for: {SKILL_DESCRIPTION}")
-        skill_vector = get_embedding(SKILL_DESCRIPTION)
+        skill_vector = asyncio.run(get_embedding(SKILL_DESCRIPTION))
         
         # Construct update statement
         stmt = (

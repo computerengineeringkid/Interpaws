@@ -3,6 +3,7 @@ Sprint 8 - Dynamic Slot-Filling Integration Test
 Tests the intelligent cancellation slot replacement system end-to-end.
 """
 
+import asyncio
 import sys
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -79,7 +80,7 @@ def test_cancellation_suggestions():
             db.flush()  # Get the ID
             
             # Create preference with embedding
-            embedding = get_embedding(pref_text)
+            embedding = asyncio.run(get_embedding(pref_text))
             preference = Preferences(
                 client_id=client.id,
                 details=pref_text,

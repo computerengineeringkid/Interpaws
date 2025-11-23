@@ -507,7 +507,7 @@ Instructions:
     response_model=List[schemas.SuggestedSlot],
     tags=["Bookings"],
 )
-def get_reschedule_options(
+async def get_reschedule_options(
     booking_id: int,
     current_user: models.Client = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -579,7 +579,7 @@ def get_reschedule_options(
                 descriptor = f"{slot_start.strftime('%A %I:%M %p')} with {staff.name}"
                 preference_match = 0.5
                 if preference_vector is not None:
-                    slot_embedding = get_embedding(descriptor)
+                    slot_embedding = await get_embedding(descriptor)
                     distance = sum(
                         (a - b) ** 2
                         for a, b in zip(preference_vector, slot_embedding)
@@ -684,7 +684,7 @@ async def get_ai_suggestions(
     db: Session = Depends(get_db)
 ):
     # Get embedding for the complaint text
-    complaint_vector = get_embedding(request.complaint_text)
+    complaint_vector = await get_embedding(request.complaint_text)
     
     # Query AIFeedbackLog to find "proven staff" from past successful bookings
     # Find staff who have successfully handled similar complaints (L2 distance < 0.5)
@@ -794,7 +794,7 @@ IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly
 async def handle_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     """Smart AI chat endpoint with context from complaint text and staff matching."""
     # Get embedding for the complaint text
-    complaint_vector = get_embedding(request.complaint_text)
+    complaint_vector = await get_embedding(request.complaint_text)
     
     # Query AIFeedbackLog to find "proven staff" from past successful bookings
     # Find staff who have successfully handled similar complaints (L2 distance < 0.5)
@@ -915,7 +915,7 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
 
 # Staff Endpoints
 @app.post("/staff/", response_model=schemas.Staff, tags=["Staff"])
-def create_staff(staff: schemas.StaffCreate, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+async def create_staff(staff: schemas.StaffCreate, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     """Create a new staff member."""
     # Check if email already exists
     db_staff = db.query(models.Staff).filter(models.Staff.email == staff.email).first()
@@ -925,7 +925,7 @@ def create_staff(staff: schemas.StaffCreate, current_admin: models.Staff = Depen
     # Generate embedding for skills_description if provided
     skills_vector = None
     if staff.skills_description:
-        skills_vector = get_embedding(staff.skills_description)
+        skills_vector = await get_embedding(staff.skills_description)
     
     # Create new staff with hashed password
     hashed_password = get_password_hash(staff.password)
@@ -953,7 +953,7 @@ def get_all_staff(
 
 
 @app.put("/staff/{staff_id}", response_model=schemas.Staff, tags=["Staff"])
-def update_staff(
+async def update_staff(
     staff_id: int,
     staff_update: schemas.StaffUpdate,
     current_admin: models.Staff = Depends(get_current_admin_user),
@@ -970,7 +970,7 @@ def update_staff(
     
     # If skills_description is being updated, regenerate the embedding
     if "skills_description" in update_data and update_data["skills_description"] is not None:
-        db_staff.skills_vector = get_embedding(update_data["skills_description"])
+        db_staff.skills_vector = await get_embedding(update_data["skills_description"])
     
     for field, value in update_data.items():
         setattr(db_staff, field, value)
@@ -1106,7 +1106,7 @@ async def get_cancellation_suggestions(
         )
     
     # Generate embedding for "earlier appointment" concept
-    earlier_embedding = get_embedding(f"I prefer earlier appointments, especially {time_description}")
+    earlier_embedding = await get_embedding(f"I prefer earlier appointments, especially {time_description}")
     
     suggestions = []
     
@@ -1187,7 +1187,7 @@ async def create_my_preferences(
 ):
     """Create or update preferences for the currently authenticated client."""
     # Generate embedding for preferences
-    details_vector = get_embedding(preferences.details)
+    details_vector = await get_embedding(preferences.details)
     
     # Create new preference record
     db_preferences = models.Preferences(
@@ -1240,7 +1240,7 @@ async def log_ai_feedback(
 
     complaint_vector = list(booking.complaint_vector) if booking.complaint_vector is not None else None
     if complaint_vector is None and booking.complaint_reason:
-        complaint_vector = get_embedding(booking.complaint_reason)
+        complaint_vector = await get_embedding(booking.complaint_reason)
         booking.complaint_vector = complaint_vector
 
     vector_updated = False

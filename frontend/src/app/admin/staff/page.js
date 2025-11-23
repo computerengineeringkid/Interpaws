@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { parseErrorResponse } from "@/utils/api";
+import { parseErrorResponse, fetchWithAuth } from "@/utils/api";
 
 export default function StaffManagementPage() {
   return (
@@ -23,7 +23,7 @@ function StaffManagementContent() {
   // CRITICAL FIX: Use adminToken, NOT client token
   const { adminToken } = useAuth();
   const [staff, setStaff] = useState([]);
-  const [isLoading, setIsLoading] = useState(true); 
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingStaff, setEditingStaff] = useState(null);
 
@@ -38,12 +38,12 @@ function StaffManagementContent() {
 
   const fetchStaff = async () => {
     if (!adminToken) return; // Wait for auth
-    
+
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/staff/", {
+      const response = await fetchWithAuth("/api/staff/", {
         headers: {
           // CRITICAL FIX: Use adminToken in header
           Authorization: `Bearer ${adminToken}`,
@@ -84,7 +84,7 @@ function StaffManagementContent() {
         if (formData.role) updatePayload.role = formData.role;
         if (formData.skills_description) updatePayload.skills_description = formData.skills_description;
 
-        const response = await fetch(`/api/staff/${editingStaff.id}`, {
+        const response = await fetchWithAuth(`/api/staff/${editingStaff.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -101,7 +101,7 @@ function StaffManagementContent() {
         setEditingStaff(null);
       } else {
         // Create new staff
-        const response = await fetch("/api/staff/", {
+        const response = await fetchWithAuth("/api/staff/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -162,7 +162,7 @@ function StaffManagementContent() {
     }
 
     try {
-      const response = await fetch(`/api/staff/${staffId}`, {
+      const response = await fetchWithAuth(`/api/staff/${staffId}`, {
         method: "DELETE",
         headers: {
           // CRITICAL FIX: Use adminToken

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
+import { fetchWithAuth } from "@/utils/api";
 
 export default function ClientLookupPage() {
   // FIX: Use adminToken
@@ -16,7 +17,7 @@ export default function ClientLookupPage() {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/clients?search=${search}`, { 
+      const res = await fetchWithAuth(`/api/clients?search=${search}`, {
         // FIX: Use adminToken
         headers: { Authorization: `Bearer ${adminToken}` }
       });
@@ -39,16 +40,16 @@ export default function ClientLookupPage() {
           <CardHeader><CardTitle>Client Lookup</CardTitle></CardHeader>
           <CardContent>
             <div className="flex gap-4 mb-6">
-              <Input 
-                placeholder="Search clients..." 
-                value={search} 
-                onChange={(e) => setSearch(e.target.value)} 
+              <Input
+                placeholder="Search clients..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
               />
               <Button onClick={fetchClients} disabled={loading}>
                 {loading ? "Searching..." : "Search"}
               </Button>
             </div>
-            
+
             <div className="space-y-4">
               {clients.length === 0 ? (
                  <p className="text-gray-500">No clients found.</p>

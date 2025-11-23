@@ -6,6 +6,7 @@ import Navigation from '@/components/Navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { fetchWithAuth } from "@/utils/api";
 
 export default function MyBookingsPage() {
   const { clientToken } = useAuth();
@@ -22,7 +23,7 @@ export default function MyBookingsPage() {
   useEffect(() => {
     const fetchBookings = async () => {
       try {
-        const response = await fetch('/api/bookings/me', {
+        const response = await fetchWithAuth('/api/bookings/me', {
           headers: {
             'Authorization': `Bearer ${clientToken}`,
           },
@@ -53,7 +54,7 @@ export default function MyBookingsPage() {
     setRescheduleModalOpen(true);
     setOptionsLoading(true);
     try {
-      const response = await fetch(`/api/bookings/${booking.id}/reschedule_options`, {
+      const response = await fetchWithAuth(`/api/bookings/${booking.id}/reschedule_options`, {
         headers: {
           Authorization: `Bearer ${clientToken}`,
         },
@@ -86,7 +87,7 @@ export default function MyBookingsPage() {
     setOptionSubmitting(option.start_time);
     setRescheduleError(null);
     try {
-      const response = await fetch(`/api/bookings/${selectedBooking.id}/client_reschedule`, {
+      const response = await fetchWithAuth(`/api/bookings/${selectedBooking.id}/client_reschedule`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -225,7 +226,7 @@ export default function MyBookingsPage() {
               )}
               {optionsLoading ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">🤖 AI is finding the best slots for you...</p>
+                  <p className="text-sm text-muted-foreground">AI is finding the best slots for you...</p>
                   {[...Array(3)].map((_, idx) => (
                     <div key={idx} className="h-20 rounded-xl border bg-muted/30 animate-pulse" />
                   ))}

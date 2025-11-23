@@ -6,15 +6,16 @@ import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  X, 
-  TrendingUp, 
-  AlertCircle, 
-  Clock, 
-  CalendarCheck 
+import {
+  X,
+  TrendingUp,
+  AlertCircle,
+  Clock,
+  CalendarCheck
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { fetchWithAuth } from "@/utils/api";
 
 export default function AdminDashboardPage() {
   return (
@@ -31,7 +32,7 @@ function AdminDashboardContent() {
   const [forecastItems, setForecastItems] = useState([]);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastError, setForecastError] = useState(null);
-  
+
   // Stats state
   const [todayBookings, setTodayBookings] = useState([]);
   const [todaySurgeries, setTodaySurgeries] = useState([]);
@@ -47,7 +48,7 @@ function AdminDashboardContent() {
       setForecastLoading(true);
       setForecastError(null);
       try {
-        const response = await fetch("/api/admin/inventory/forecast", {
+        const response = await fetchWithAuth("/api/admin/inventory/forecast", {
           headers: { Authorization: `Bearer ${adminToken}` },
         });
 
@@ -76,22 +77,22 @@ function AdminDashboardContent() {
       setStatsLoading(true);
       try {
         const today = new Date().toISOString().split('T')[0];
-        
+
         // Fetch bookings for today
-        const bookingsResponse = await fetch(`/api/bookings/${today}`, {
+        const bookingsResponse = await fetchWithAuth(`/api/bookings/${today}`, {
           headers: { Authorization: `Bearer ${adminToken}` },
         });
-        
+
         if (bookingsResponse.ok) {
           const bookingsData = await bookingsResponse.json();
           setTodayBookings(Array.isArray(bookingsData) ? bookingsData : []);
         }
 
         // Fetch surgeries for today
-        const surgeriesResponse = await fetch(`/api/surgeries/?date=${today}`, {
+        const surgeriesResponse = await fetchWithAuth(`/api/surgeries/?date=${today}`, {
           headers: { Authorization: `Bearer ${adminToken}` },
         });
-        
+
         if (surgeriesResponse.ok) {
           const surgeriesData = await surgeriesResponse.json();
           setTodaySurgeries(Array.isArray(surgeriesData) ? surgeriesData : []);
@@ -108,13 +109,13 @@ function AdminDashboardContent() {
 
   // Count low stock items for the stats card
   const lowStockCount = forecastItems.filter(i => i.days_remaining < 7).length;
-  
+
   // Calculate stats
   const pendingBookings = todayBookings.filter(b => b.status === 'pending').length;
   const nextSurgery = todaySurgeries
     .filter(s => new Date(s.start_time) > new Date())
     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))[0];
-  
+
   // Calculate revenue estimate (basic calculation based on bookings)
   const estimatedRevenue = todayBookings.reduce((sum, booking) => {
     // Rough estimate: $100 per booking
@@ -135,38 +136,38 @@ function AdminDashboardContent() {
 
       {/* KPI Stats Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatsCard 
-          title="Appointments Today" 
-          value={statsLoading ? "..." : todayBookings.length.toString()} 
-          icon={CalendarCheck} 
+        <StatsCard
+          title="Appointments Today"
+          value={statsLoading ? "..." : todayBookings.length.toString()}
+          icon={CalendarCheck}
           description={pendingBookings > 0 ? `${pendingBookings} pending confirmation` : "All confirmed"}
         />
-        <StatsCard 
-          title="Surgery Schedule" 
-          value={statsLoading ? "..." : todaySurgeries.length.toString()} 
-          icon={Clock} 
+        <StatsCard
+          title="Surgery Schedule"
+          value={statsLoading ? "..." : todaySurgeries.length.toString()}
+          icon={Clock}
           description={
-            nextSurgery 
+            nextSurgery
               ? `Next: ${nextSurgery.surgery_type || 'Surgery'} at ${new Date(nextSurgery.start_time).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`
               : todaySurgeries.length > 0 ? "All surgeries completed" : "No surgeries scheduled"
           }
         />
-        <StatsCard 
-          title="Low Stock Alerts" 
-          value={forecastLoading ? "..." : lowStockCount.toString()} 
-          icon={AlertCircle} 
+        <StatsCard
+          title="Low Stock Alerts"
+          value={forecastLoading ? "..." : lowStockCount.toString()}
+          icon={AlertCircle}
           description="Items < 7 days remaining"
           trend={lowStockCount > 0 ? "negative" : undefined}
         />
-        <StatsCard 
-          title="Revenue Est." 
-          value={statsLoading ? "..." : `$${estimatedRevenue.toLocaleString()}`} 
-          icon={TrendingUp} 
+        <StatsCard
+          title="Revenue Est."
+          value={statsLoading ? "..." : `$${estimatedRevenue.toLocaleString()}`}
+          icon={TrendingUp}
           description={todayBookings.length > 0 ? `From ${todayBookings.length} appointments` : "No appointments today"}
           trend="positive"
         />
       </div>
-      
+
       {/* Cancellation Suggestions Banner */}
       {cancellationSuggestions && cancellationSuggestions.suggestions.length > 0 && (
         <Card className="border-l-4 border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20 shadow-sm">
@@ -178,7 +179,7 @@ function AdminDashboardContent() {
                   Cancellation Opportunity Found
                 </CardTitle>
                 <CardDescription className="text-blue-700 dark:text-blue-300 mt-1">
-                  A slot opened at <span className="font-bold">{new Date(cancellationSuggestions.cancelled_slot_time).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</span>. 
+                  A slot opened at <span className="font-bold">{new Date(cancellationSuggestions.cancelled_slot_time).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</span>.
                   Our AI found {cancellationSuggestions.suggestions.length} clients who prefer earlier times.
                 </CardDescription>
               </div>
@@ -213,11 +214,11 @@ function AdminDashboardContent() {
 
       {/* Main Content Grid */}
       <div className="grid gap-6 lg:grid-cols-7">
-        
+
         {/* Left Col: Calendar & Inventory (Narrower) */}
         <div className="lg:col-span-2 space-y-6">
             <AdminCalendar selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
-            
+
             <Card className="overflow-hidden">
                 <CardHeader className="bg-zinc-50/50 border-b px-4 py-3">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -256,7 +257,7 @@ function AdminDashboardContent() {
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold">Schedule for {selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric'})}</h2>
                 </div>
-                <AdminBookingList 
+                <AdminBookingList
                     selectedDate={selectedDate}
                 />
             </Card>

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
+import { fetchWithAuth } from "@/utils/api";
 
 export default function AdminBookingList({ selectedDate, setCancellationSuggestions }) {
   const { adminToken } = useAuth();
@@ -21,7 +22,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
       setError(null);
       try {
         const dateStr = selectedDate.toISOString().split('T')[0];
-        const response = await fetch(`/api/bookings/${dateStr}`, {
+        const response = await fetchWithAuth(`/api/bookings/${dateStr}`, {
           headers: { Authorization: `Bearer ${adminToken}` },
         });
 
@@ -46,13 +47,13 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
     if (!confirm("Are you sure you want to cancel this booking?")) return;
 
     try {
-      const response = await fetch(`/api/bookings/${bookingId}`, {
+      const response = await fetchWithAuth(`/api/bookings/${bookingId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${adminToken}` },
       });
 
       if (!response.ok) throw new Error("Failed to cancel booking");
-      
+
       // Refresh bookings
       setBookings(bookings.filter(b => b.id !== bookingId));
     } catch (err) {
@@ -60,7 +61,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
       alert("Failed to cancel booking: " + err.message);
     }
   };
-  
+
   // Helper for time formatting
   const formatTime = (dateString) => {
     if (!dateString) return "N/A";
@@ -115,14 +116,14 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
         </thead>
         <tbody className="divide-y divide-zinc-100">
           {bookings.map((booking) => {
-            const statusColor = 
-                booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
-                booking.status === 'cancelled' ? 'bg-red-100 text-red-700 border-red-200' : 
+            const statusColor =
+                booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                booking.status === 'cancelled' ? 'bg-red-100 text-red-700 border-red-200' :
                 'bg-amber-100 text-amber-700 border-amber-200';
 
             return (
-            <tr 
-              key={booking.id} 
+            <tr
+              key={booking.id}
               onClick={(e) => {
                 if (!e.target.closest('button')) {
                   window.location.href = `/admin/bookings/${booking.id}`;
@@ -164,7 +165,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
                     <span className="text-sm text-zinc-700">Dr. {booking.staff?.name?.split(' ').pop() || "Unassigned"}</span>
                 </div>
               </td>
-              
+
               {/* Status */}
               <td className="py-4 px-4 text-center">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusColor} capitalize`}>
@@ -174,7 +175,7 @@ export default function AdminBookingList({ selectedDate, setCancellationSuggesti
 
               {/* Actions */}
               <td className="py-4 px-4 text-right">
-                <button 
+                <button
                   onClick={(e) => {
                       e.stopPropagation();
                       handleDelete(booking.id);

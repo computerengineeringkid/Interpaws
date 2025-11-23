@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { fetchWithAuth } from "@/utils/api";
 
 export default function PreferencesPage() {
   const { token } = useAuth();
@@ -18,7 +19,7 @@ export default function PreferencesPage() {
   useEffect(() => {
     const fetchPreferences = async () => {
       try {
-        const response = await fetch('/api/preferences/me', {
+        const response = await fetchWithAuth('/api/preferences/me', {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -49,7 +50,7 @@ export default function PreferencesPage() {
     setSaving(true);
 
     try {
-      const response = await fetch('/api/preferences/me', {
+      const response = await fetchWithAuth('/api/preferences/me', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

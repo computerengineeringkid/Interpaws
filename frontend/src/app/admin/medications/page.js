@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { parseErrorResponse } from "@/utils/api";
+import { parseErrorResponse, fetchWithAuth } from "@/utils/api";
 
 export default function MedicationManagementPage() {
   return (
@@ -40,7 +40,7 @@ function MedicationManagementContent() {
     setError(null);
 
     try {
-      const response = await fetch("/api/medications/", {
+      const response = await fetchWithAuth("/api/medications/", {
         headers: {
           // CRITICAL FIX: Use adminToken
           Authorization: `Bearer ${adminToken}`,
@@ -86,7 +86,7 @@ function MedicationManagementContent() {
           }
         });
 
-        const response = await fetch(`/api/medications/${editingMedication.id}`, {
+        const response = await fetchWithAuth(`/api/medications/${editingMedication.id}`, {
           method: "PUT",
           headers,
           body: JSON.stringify(updatePayload),
@@ -100,7 +100,7 @@ function MedicationManagementContent() {
           stock_quantity: parseInt(formData.stock_quantity) || 0,
         };
 
-        const response = await fetch("/api/medications/", {
+        const response = await fetchWithAuth("/api/medications/", {
           method: "POST",
           headers,
           body: JSON.stringify(payload),
@@ -123,7 +123,7 @@ function MedicationManagementContent() {
     if (!window.confirm("Are you sure you want to delete this medication?")) return;
 
     try {
-      const response = await fetch(`/api/medications/${medicationId}`, {
+      const response = await fetchWithAuth(`/api/medications/${medicationId}`, {
         method: "DELETE",
         headers: {
           // CRITICAL FIX: Use adminToken

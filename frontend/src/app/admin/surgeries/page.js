@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { parseErrorResponse } from "@/utils/api";
+import { parseErrorResponse, fetchWithAuth } from "@/utils/api";
 
 export default function SurgeryManagementPage() {
   return (
@@ -62,7 +62,7 @@ function SurgeryManagementContent() {
       if (filterPetId) params.append("pet_id", filterPetId);
 
       const url = `/api/surgeries/?${params.toString()}`;
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         headers: {
           // CRITICAL FIX: Use adminToken
           Authorization: `Bearer ${adminToken}`,
@@ -93,11 +93,11 @@ function SurgeryManagementContent() {
 
       setInventoryLoading(true);
       try {
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `/api/surgeries/check_inventory?surgery_type=${encodeURIComponent(formData.surgery_type)}`,
           {
             // CRITICAL FIX: Use adminToken
-            headers: { Authorization: `Bearer ${adminToken}` }, 
+            headers: { Authorization: `Bearer ${adminToken}` },
           }
         );
 
@@ -123,7 +123,7 @@ function SurgeryManagementContent() {
       const headers = {
         "Content-Type": "application/json",
         // CRITICAL FIX: Use adminToken
-        Authorization: `Bearer ${adminToken}`, 
+        Authorization: `Bearer ${adminToken}`,
       };
 
       if (editingSurgery) {
@@ -132,7 +132,7 @@ function SurgeryManagementContent() {
           if (formData[key]) updatePayload[key] = formData[key];
         });
 
-        const response = await fetch(`/api/surgeries/${editingSurgery.id}`, {
+        const response = await fetchWithAuth(`/api/surgeries/${editingSurgery.id}`, {
           method: "PUT",
           headers,
           body: JSON.stringify(updatePayload),
@@ -147,7 +147,7 @@ function SurgeryManagementContent() {
           staff_id: parseInt(formData.staff_id),
         };
 
-        const response = await fetch("/api/surgeries/", {
+        const response = await fetchWithAuth("/api/surgeries/", {
           method: "POST",
           headers,
           body: JSON.stringify(payload),
@@ -173,12 +173,12 @@ function SurgeryManagementContent() {
       staff_id: surgery.staff_id.toString(),
       surgery_type: surgery.surgery_type,
       notes: surgery.notes || "",
-      start_time: surgery.start_time.slice(0, 16), 
+      start_time: surgery.start_time.slice(0, 16),
       end_time: surgery.end_time.slice(0, 16),
       status: surgery.status,
     });
   };
-  
+
   const handleCancelEdit = () => {
     setEditingSurgery(null);
     setFormData({ pet_id: "", staff_id: "", surgery_type: "", notes: "", start_time: "", end_time: "", status: "Scheduled" });
@@ -187,10 +187,10 @@ function SurgeryManagementContent() {
   const handleDelete = async (surgeryId) => {
     if (!window.confirm("Are you sure you want to delete this surgery?")) return;
     try {
-      const response = await fetch(`/api/surgeries/${surgeryId}`, {
+      const response = await fetchWithAuth(`/api/surgeries/${surgeryId}`, {
         method: "DELETE",
         // CRITICAL FIX: Use adminToken
-        headers: { Authorization: `Bearer ${adminToken}` }, 
+        headers: { Authorization: `Bearer ${adminToken}` },
       });
       if (!response.ok) throw new Error("Failed to delete surgery");
       fetchSurgeries();
@@ -203,7 +203,7 @@ function SurgeryManagementContent() {
      if (typeof window === "undefined") return;
      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
      if (!SpeechRecognition) return;
-     
+
      const recognition = new SpeechRecognition();
      recognition.onresult = async (event) => {
       const transcript = event.results?.[0]?.[0]?.transcript?.trim();
@@ -211,12 +211,12 @@ function SurgeryManagementContent() {
 
       setIsDictationProcessing(true);
       try {
-        const response = await fetch(`/api/surgeries/${surgeryId}/smart_notes`, {
+        const response = await fetchWithAuth(`/api/surgeries/${surgeryId}/smart_notes`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             // CRITICAL FIX: Use adminToken
-            Authorization: `Bearer ${adminToken}`, 
+            Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify({ raw_transcript: transcript }),
         });
@@ -238,7 +238,7 @@ function SurgeryManagementContent() {
     <main className="container mx-auto py-12 px-4">
       <h1 className="text-4xl font-bold mb-6 text-zinc-900 dark:text-zinc-50">Surgery Management</h1>
       {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-      
+
       <div className="grid gap-6">
         <Card>
             <CardHeader><CardTitle>Filters</CardTitle></CardHeader>
@@ -262,7 +262,7 @@ function SurgeryManagementContent() {
                             <div className="space-y-2"><Label>Staff ID *</Label><Input value={formData.staff_id} onChange={(e)=>setFormData({...formData, staff_id: e.target.value})} required /></div>
                         </div>
                         <div className="space-y-2"><Label>Surgery Type *</Label><Input value={formData.surgery_type} onChange={(e)=>setFormData({...formData, surgery_type: e.target.value})} required /></div>
-                        
+
                         {formData.surgery_type && (
                              <div className="space-y-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-md">
                                 <h3 className="font-semibold text-sm">Required Inventory:</h3>

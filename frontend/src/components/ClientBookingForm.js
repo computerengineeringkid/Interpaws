@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { AuthContext } from "@/context/AuthContext";
 import AIChat from "@/components/AIChat";
+import { fetchWithAuth } from "@/utils/api";
 
 const serviceOptions = [
   { value: "wellness exam", label: "Wellness Exam" },
@@ -63,7 +64,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
     const fetchPets = async () => {
       setPetLoading(true);
       try {
-        const response = await fetch(`/api/pets/me?name=${encodeURIComponent(petName)}`, {
+        const response = await fetchWithAuth(`/api/pets/me?name=${encodeURIComponent(petName)}`, {
           headers: {
             Authorization: `Bearer ${clientToken}`,
           },
@@ -87,14 +88,14 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   const handleCreatePet = async () => {
     if (!petName.trim()) return;
     setStatus(null);
-    
+
     if (!clientToken) {
       setStatus({ type: "error", message: "Please log in to create a pet profile." });
       return;
     }
-    
+
     try {
-      const response = await fetch("/api/pets", {
+      const response = await fetchWithAuth("/api/pets", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -125,7 +126,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(BOOKINGS_BY_NAME_ENDPOINT, {
+      const response = await fetchWithAuth(BOOKINGS_BY_NAME_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

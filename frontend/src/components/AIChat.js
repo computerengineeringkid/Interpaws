@@ -5,6 +5,7 @@ import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { fetchWithAuth } from "@/utils/api";
 
 const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete }, ref) => {
   const [prompt, setPrompt] = useState("");
@@ -37,7 +38,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
     }
 
     try {
-      const res = await fetch("/api/agent/chat", {
+      const res = await fetchWithAuth("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -93,7 +94,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
     }
 
     try {
-      const response = await fetch("/api/bookings/by-name", {
+      const response = await fetchWithAuth("/api/bookings/by-name", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -133,7 +134,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
         <div className="space-y-4">
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-10">
-              <p className="text-lg font-medium mb-2">👋 Welcome to Interpaws!</p>
+              <p className="text-lg font-medium mb-2">Welcome to Interpaws!</p>
               <p>I&apos;m your AI Veterinary Intake Coordinator.</p>
               <p className="mt-2">Tell me how I can help your pet today (e.g., &quot;My dog has a cough&quot;).</p>
             </div>

@@ -949,7 +949,7 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
 
 
 # Staff Endpoints
-@app.post("/staff/", response_model=schemas.Staff, tags=["Staff"])
+@app.post("/staff", response_model=schemas.Staff, tags=["Staff"])
 async def create_staff(staff: schemas.StaffCreate, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     """Create a new staff member."""
     # Check if email already exists
@@ -978,7 +978,7 @@ async def create_staff(staff: schemas.StaffCreate, current_admin: models.Staff =
     return db_staff
 
 
-@app.get("/staff/", response_model=List[schemas.Staff], tags=["Staff"])
+@app.get("/staff", response_model=List[schemas.Staff], tags=["Staff"])
 def get_all_staff(
     current_admin: models.Staff = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
@@ -1253,7 +1253,7 @@ async def get_my_preferences(
 # AI Feedback Loop Endpoints
 # ============================================
 
-@app.post("/log-feedback/", response_model=schemas.AIFeedbackLogResponse, tags=["AI Feedback"])
+@app.post("/log-feedback", response_model=schemas.AIFeedbackLogResponse, tags=["AI Feedback"])
 async def log_ai_feedback(
     booking_id: int,
     current_admin: models.Staff = Depends(get_current_admin_user),
@@ -1324,7 +1324,7 @@ async def log_ai_feedback(
 # Surgery Endpoints
 # ============================================
 
-@app.post("/surgeries/", response_model=schemas.Surgery, tags=["Surgeries"])
+@app.post("/surgeries", response_model=schemas.Surgery, tags=["Surgeries"])
 def create_surgery(
     surgery: schemas.SurgeryCreate,
     current_admin: models.Staff = Depends(get_current_admin_user),
@@ -1338,7 +1338,7 @@ def create_surgery(
     return db_surgery
 
 
-@app.get("/surgeries/", response_model=List[schemas.Surgery], tags=["Surgeries"])
+@app.get("/surgeries", response_model=List[schemas.Surgery], tags=["Surgeries"])
 def get_surgeries(
     date: Optional[date] = None,
     staff_id: Optional[int] = None,
@@ -1577,7 +1577,7 @@ def get_inventory_forecast(
 # Medication Endpoints
 # ============================================
 
-@app.post("/medications/", response_model=schemas.Medication, tags=["Medications"])
+@app.post("/medications", response_model=schemas.Medication, tags=["Medications"])
 def create_medication(
     medication: schemas.MedicationCreate,
     current_admin: models.Staff = Depends(get_current_admin_user),
@@ -1591,7 +1591,7 @@ def create_medication(
     return db_medication
 
 
-@app.get("/medications/", response_model=List[schemas.Medication], tags=["Medications"])
+@app.get("/medications", response_model=List[schemas.Medication], tags=["Medications"])
 def get_medications(
     current_admin: models.Staff = Depends(get_current_admin_user),
     db: Session = Depends(get_db)

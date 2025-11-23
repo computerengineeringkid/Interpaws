@@ -1,16 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async rewrites() {
+    // Use the Docker service name 'http://backend:8000' or localhost fallback
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    
     console.log(`Proxying requests to: ${backendUrl}`);
 
     return [
       // 1. API & Auth Routes
       { source: '/api/:path*', destination: `${backendUrl}/:path*` },
       { source: '/token', destination: `${backendUrl}/token` },
-      { source: '/staff/login', destination: `${backendUrl}/staff/login` }, // Critical for admin login
+      { source: '/staff/login', destination: `${backendUrl}/staff/login` },
       
-      // 2. Core Business Entities (The missing link!)
+      // 2. Core Business Entities (This fixes the empty Staff/Bookings lists)
       { source: '/staff/:path*', destination: `${backendUrl}/staff/:path*` },
       { source: '/bookings/:path*', destination: `${backendUrl}/bookings/:path*` },
       { source: '/clients/:path*', destination: `${backendUrl}/clients/:path*` },
@@ -20,7 +22,6 @@ const nextConfig = {
       { source: '/preferences/:path*', destination: `${backendUrl}/preferences/:path*` },
       
       // 3. AI & Admin Specifics
-      { source: '/admin/:path*', destination: `${backendUrl}/admin/:path*` }, // Careful: this proxies backend admin routes, ensure no conflict with frontend pages
       { source: '/agent/:path*', destination: `${backendUrl}/agent/:path*` },
       { source: '/chat/:path*', destination: `${backendUrl}/chat/:path*` },
       { source: '/suggest_slots', destination: `${backendUrl}/suggest_slots` },

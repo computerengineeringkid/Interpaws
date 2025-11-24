@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
@@ -60,8 +61,7 @@ def healthcheck():
 def on_startup() -> None:
     """Ensure DB is reachable and create vector extension with simple retries.
 
-    This avoids import-time connection attempts and tolerates slow DB startup.
-    Tables are now managed by Alembic migrations, not by create_all.
+    Also triggers an AI warmup task to load the model into memory immediately.
     """
     max_attempts = 10
     delay_seconds = 2
@@ -80,6 +80,12 @@ def on_startup() -> None:
             if attempt == max_attempts:
                 raise
             time.sleep(delay_seconds)
+
+    # --- WARMUP LOGIC ---
+    print("🔥 Triggering AI model pre-load in background...")
+    # Fire-and-forget the warmup request so the server starts instantly
+    # while the model loads in parallel.
+    asyncio.create_task(get_ollama_recommendation("warmup"))
 
 
 @app.get("/")

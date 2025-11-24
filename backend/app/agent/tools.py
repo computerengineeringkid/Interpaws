@@ -325,6 +325,81 @@ class AgentTools:
         except Exception as exc:  # noqa: BLE001
             return {"status": "error", "message": f"Booking failed: {str(exc)}"}
 
+    async def cancel_booking(self, owner_name: str, pet_name: str) -> Dict[str, Any]:
+        """Finds the next upcoming booking for the pet and cancels it."""
+        client, pet_or_error = self._resolve_client_and_pet(owner_name, pet_name)
+        if not client:
+            return pet_or_error
+
+        # Find next active booking
+        booking = (
+            self.db.query(models.Booking)
+            .filter(
+                models.Booking.pet_id == pet_or_error.id,
+                models.Booking.status == "confirmed",
+                models.Booking.start_time > datetime.utcnow()
+            )
+            .order_by(models.Booking.start_time.asc())
+            .first()
+        )
+
+        if not booking:
+            return {"status": "error", "message": f"I couldn't find any upcoming confirmed appointments for {pet_or_error.name}."}
+
+        old_time = booking.start_time.strftime('%A, %B %d at %I:%M %p')
+        booking.status = "cancelled"
+        self.db.commit()
+
+        return {
+            "status": "success",
+            "message": f"I have successfully cancelled the appointment for {pet_or_error.name} on {old_time}."
+        }
+
+    async def reschedule_booking(self, owner_name: str, pet_name: str, new_time_str: str) -> Dict[str, Any]:
+        """Moves the next upcoming booking to a new time."""
+        client, pet_or_error = self._resolve_client_and_pet(owner_name, pet_name)
+        if not client:
+            return pet_or_error
+
+        booking = (
+            self.db.query(models.Booking)
+            .filter(
+                models.Booking.pet_id == pet_or_error.id,
+                models.Booking.status == "confirmed",
+                models.Booking.start_time > datetime.utcnow()
+            )
+            .order_by(models.Booking.start_time.asc())
+            .first()
+        )
+
+        if not booking:
+            return {"status": "error", "message": f"I couldn't find an appointment to reschedule for {pet_or_error.name}."}
+
+        # Parse new time
+        try:
+            try:
+                new_start = datetime.strptime(new_time_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                new_start = datetime.fromisoformat(new_time_str)
+
+            duration = booking.end_time - booking.start_time
+            new_end = new_start + duration
+
+            # Check availability
+            if not check_availability(self.db, booking.staff_id, new_start, new_end):
+                return {"status": "error", "message": f"The slot at {new_time_str} is not available with Dr. {booking.staff.name}."}
+
+            booking.start_time = new_start
+            booking.end_time = new_end
+            self.db.commit()
+
+            return {
+                "status": "success",
+                "message": f"Rescheduled! {pet_or_error.name} is now set for {new_start.strftime('%A, %B %d at %I:%M %p')}."
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Could not reschedule: {str(e)}"}
+
     def check_inventory(self, item_name: str) -> Dict[str, Any]:
         """Return the current stock quantity for a medication."""
         medication = (

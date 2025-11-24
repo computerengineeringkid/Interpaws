@@ -72,11 +72,24 @@ class EnhancedInterpawsAgent(InterpawsAgent):
             })
 
         # Step 2: Classify Intent using semantic-router
-        intent_result = await self.intent_router.classify_intent(user_message)
-        detected_intent = intent_result["intent"]
-        confidence = intent_result["confidence"]
-
-        print(f"🎯 Intent Classification: {detected_intent} (confidence: {confidence:.2f})")
+        try:
+            intent_result = await self.intent_router.classify_intent(user_message)
+            detected_intent = intent_result["intent"]
+            confidence = intent_result["confidence"]
+            print(f"🎯 Intent Classification: {detected_intent} (confidence: {confidence:.2f})")
+        except Exception as e:
+            # If semantic router fails (e.g., index not ready), fall back to base agent
+            print(f"⚠️ Intent classification failed: {e}. Falling back to base agent.")
+            return await super().chat(
+                user_message=user_message,
+                context=context,
+                session_id=session_id,
+                prior_history=prior_history,
+                client_email=client_email,
+                complaint_text=complaint_text,
+                pet_name=pet_name,
+                owner_name=owner_name
+            )
 
         # Step 3: Extract details based on intent
         extracted_details = await self.intent_router.extract_booking_details(

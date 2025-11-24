@@ -99,9 +99,10 @@ class IntentRouter:
         """Initialize the router asynchronously"""
         if self.router is None:
             # Use Ollama encoder with nomic-embed-text model (default for Interpaws)
+            # Ollama runs on host machine, accessible via host.docker.internal
             self.encoder = OllamaEncoder(
-                model_name="nomic-embed-text",
-                host="http://ollama:11434"
+                name="nomic-embed-text",
+                base_url="http://host.docker.internal:11434"
             )
             self.router = SemanticRouter(encoder=self.encoder, routes=self.routes)
 

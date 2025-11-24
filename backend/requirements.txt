@@ -12,3 +12,4 @@ alembic
 faker
 schedule
 sendgrid
+semantic-router

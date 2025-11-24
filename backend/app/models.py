@@ -38,6 +38,7 @@ class Pet(Base):
     name = Column(String)
     species = Column(String, index=True)
     breed = Column(String)
+    date_of_birth = Column(DateTime, nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
 
 
@@ -53,6 +54,11 @@ class Booking(Base):
     staff_id = Column(Integer, ForeignKey("staff.id"))
     complaint_reason = Column(Text, nullable=True)
     complaint_vector = Column(Vector(384), nullable=True)
+
+    # Relationships for eager loading
+    client = relationship("Client", foreign_keys=[client_id])
+    pet = relationship("Pet", foreign_keys=[pet_id])
+    staff = relationship("Staff", foreign_keys=[staff_id])
 
 
 class Preferences(Base):

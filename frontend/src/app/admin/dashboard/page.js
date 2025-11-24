@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
 import AdminCalendar from "@/components/AdminCalendar";
 import AdminBookingList from "@/components/AdminBookingList";
+import AdminAIChat from "@/components/AdminAIChat";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +12,8 @@ import {
   TrendingUp,
   AlertCircle,
   Clock,
-  CalendarCheck
+  CalendarCheck,
+  MessageSquare
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
@@ -32,6 +34,7 @@ function AdminDashboardContent() {
   const [forecastItems, setForecastItems] = useState([]);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastError, setForecastError] = useState(null);
+  const [showAIChat, setShowAIChat] = useState(false);
 
   // Stats state
   const [todayBookings, setTodayBookings] = useState([]);
@@ -130,6 +133,14 @@ function AdminDashboardContent() {
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">Overview of your clinic's daily operations.</p>
         </div>
         <div className="flex items-center gap-2">
+            <Button
+              variant={showAIChat ? "secondary" : "outline"}
+              onClick={() => setShowAIChat(!showAIChat)}
+              className="gap-2"
+            >
+              <MessageSquare className="h-4 w-4" />
+              {showAIChat ? "Hide" : "Show"} AI Assistant
+            </Button>
             <Button>+ New Appointment</Button>
         </div>
       </div>
@@ -209,6 +220,13 @@ function AdminDashboardContent() {
               ))}
             </div>
           </CardContent>
+        </Card>
+      )}
+
+      {/* AI Chat Panel - Conditionally displayed */}
+      {showAIChat && (
+        <Card className="shadow-lg overflow-hidden">
+          <AdminAIChat />
         </Card>
       )}
 

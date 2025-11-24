@@ -22,6 +22,7 @@ from .ai_services import (
     get_ollama_recommendation,
 )
 from .agent import InterpawsAgent
+from .agent.enhanced_core import EnhancedInterpawsAgent
 from .agent.tools import AgentTools
 from .auth import (
     get_password_hash,
@@ -942,6 +943,64 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     except Exception as e:
         import traceback
         print(f"Agent chat error: {e}")
+        traceback.print_exc()
+        # Return a user-friendly error message
+        error_msg = str(e)
+        if "connect" in error_msg.lower() or "connection" in error_msg.lower():
+            return ChatResponse(
+                response="I'm having trouble connecting to the AI service. Please ensure Ollama is running and try again."
+            )
+        return ChatResponse(
+            response=f"I encountered an error while processing your request. Please try again. (Error: {error_msg})"
+        )
+
+
+@app.post("/agent/chat/enhanced", response_model=ChatResponse, tags=["AI Chat"])
+async def enhanced_agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
+    """
+    Enhanced agentic chat endpoint with smart intent classification.
+
+    Uses semantic-router to classify user intents (booking, cancellation, emergency, etc.)
+    and route to specialized handlers for better context understanding.
+    """
+    try:
+        agent = EnhancedInterpawsAgent(db)
+        context = f"User context: complaint details - {request.complaint_text}. IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."
+
+        agent_result = await agent.chat(
+            request.prompt,
+            context=context,
+            session_id=request.session_id,
+            prior_history=request.conversation_history,
+            client_email=request.client_email,
+            complaint_text=request.complaint_text,
+            # Persistent Context Pattern: forward known entity names
+            pet_name=request.pet_name,
+            owner_name=request.owner_name,
+        )
+
+        if isinstance(agent_result, dict):
+            # Extract slots if present
+            slots = agent_result.get("slots")
+            if slots and not isinstance(slots, list):
+                slots = _normalize_slots({"slots": slots})
+
+            # Get service type if present
+            service_type = agent_result.get("service_type")
+
+            # Get intent if present
+            intent = agent_result.get("intent")
+
+            return ChatResponse(
+                response=agent_result.get("response", ""),
+                slots=slots or None,
+                service_type=service_type,
+            )
+
+        return ChatResponse(response=str(agent_result))
+    except Exception as e:
+        import traceback
+        print(f"Enhanced agent chat error: {e}")
         traceback.print_exc()
         # Return a user-friendly error message
         error_msg = str(e)

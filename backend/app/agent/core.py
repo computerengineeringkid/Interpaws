@@ -44,6 +44,8 @@ class InterpawsAgent:
         - pet_name: Name of the pet (if mentioned).
         - complaint: Medical issue (if mentioned).
         - target_time: If the user is confirming a slot (e.g. "Book Sunday 9am"), convert it to 'YYYY-MM-DD HH:MM' format. If no specific time is chosen, use null.
+        - time_preference: Extract vague time constraints like "mornings", "after 5pm", "weekends", "next Tuesday", "afternoons". If no preference mentioned, use null.
+        - request_calendar: True if user explicitly asks to see the calendar, schedule, or availability (e.g. "show me the calendar", "what's available", "let me see the schedule"). Otherwise false.
 
         Return JSON ONLY:
         {{
@@ -52,7 +54,9 @@ class InterpawsAgent:
             "pet_breed": "...",
             "complaint": "...",
             "is_emergency": true or false,
-            "target_time": "2025-11-XX 09:00" or null
+            "target_time": "2025-11-XX 09:00" or null,
+            "time_preference": "mornings" or null,
+            "request_calendar": true or false
         }}
         """
         
@@ -66,6 +70,8 @@ class InterpawsAgent:
         current_species = data.get("pet_species")
         current_breed = data.get("pet_breed")
         is_emergency = data.get("is_emergency")
+        time_preference = data.get("time_preference")
+        request_calendar = data.get("request_calendar", False)
 
         # 3. LOGIC FLOW (The "Railroad")
 
@@ -141,18 +147,50 @@ class InterpawsAgent:
 
         best_staff = staff_matches[0]
         staff_obj = self.db.query(models.Staff).filter(models.Staff.id == best_staff['id']).first()
-        slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
-
-        slot_text = "\n".join([f"- {s['start_time'].strftime('%A %I:%M %p')}" for s in slots[:3]])
 
         # Build pet description with species/breed info
         pet_description = current_breed or current_species or "pet"
 
-        response_msg = (
-            f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}).\n"
-            f"Available openings:\n{slot_text}\n\n"
-            f"Shall I book one? (e.g. 'Yes, Sunday at 9am')"
-        )
+        # ===== NEGOTIATION STEP =====
+        # Condition 1: Explicit Calendar Request
+        if request_calendar:
+            slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
+            return {
+                "response": f"Here is the availability calendar for Dr. {best_staff['name']}. Please select a date.",
+                "slots": slots[:5],
+                "ui_action": "show_calendar",
+                "pet_name": current_pet,
+                "complaint_text": current_complaint,
+                "pet_species": current_species,
+                "pet_breed": current_breed
+            }
+
+        # Condition 2: No Preferences & No Target Time - Pause to invite input
+        if not target_time and not time_preference:
+            return {
+                "response": f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}). Do you have a preference for days or times (e.g., mornings, weekends), or would you like to see the full calendar?",
+                "pet_name": current_pet,
+                "complaint_text": current_complaint,
+                "pet_species": current_species,
+                "pet_breed": current_breed
+            }
+
+        # Condition 3: Preference Provided - Generate slots with preference context
+        slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
+        slot_text = "\n".join([f"- {s['start_time'].strftime('%A %I:%M %p')}" for s in slots[:3]])
+
+        if time_preference:
+            response_msg = (
+                f"I've looked for {time_preference} slots with Dr. {best_staff['name']} for {current_pet}.\n"
+                f"Available openings:\n{slot_text}\n\n"
+                f"Shall I book one? (e.g., 'Yes, Sunday at 9am')"
+            )
+        else:
+            response_msg = (
+                f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}).\n"
+                f"Available openings:\n{slot_text}\n\n"
+                f"Shall I book one? (e.g., 'Yes, Sunday at 9am')"
+            )
 
         return {
             "response": response_msg,

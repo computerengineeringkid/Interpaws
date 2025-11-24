@@ -5,6 +5,7 @@ import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Calendar } from "@/components/ui/calendar";
 import { fetchWithAuth } from "@/utils/api";
 
 const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete }, ref) => {
@@ -60,6 +61,8 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
         content: result?.response ?? "",
         slots: result?.slots ?? [],
         serviceType: result?.service_type,
+        uiAction: result?.ui_action,
+        suggestedDate: result?.suggested_date,
       };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (err) {
@@ -128,6 +131,16 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
     }
   };
 
+  const handleCalendarDateSelect = (date) => {
+    if (!date) return;
+    const formattedDate = date.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    sendPrompt(`What time slots do you have on ${formattedDate}?`);
+  };
+
   return (
     <div className="space-y-4">
       <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-white dark:bg-zinc-950">
@@ -152,7 +165,17 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
                   }
                 >
                   {m.content}
-                  {m?.slots && m.slots.length > 0 && (
+                  {m?.uiAction === "show_calendar" && (
+                    <div className="mt-3 flex justify-center">
+                      <Calendar
+                        mode="single"
+                        onSelect={handleCalendarDateSelect}
+                        disabled={(date) => date < new Date()}
+                        className="rounded-md border bg-background"
+                      />
+                    </div>
+                  )}
+                  {m?.slots && m.slots.length > 0 && !m?.uiAction && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {m.slots.map((slot, slotIdx) => {
                         const slotStart = slot?.start_time;

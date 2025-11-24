@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeContext, setActiveContext] = useState(null);
-
-  // Session ID for conversation memory - persists across re-renders
-  const sessionIdRef = useRef("session-" + Math.random().toString(36).substr(2, 9));
+  const [sessionId] = useState(() => Math.random().toString(36).substring(7));
 
   useImperativeHandle(ref, () => ({
     getChatHistory: () => messages.map((m) => `${m.role === "user" ? "Client" : "AI"}: ${m.content}`).join("\n"),
@@ -27,8 +25,6 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
 
     setMessages([]);
     setActiveContext(context);
-    // Reset session ID for new conversation
-    sessionIdRef.current = "session-" + Math.random().toString(36).substr(2, 9);
     const initialPrompt = `Owner: ${context.ownerName}. Pet: ${context.petName}. Complaint: ${context.complaint}. Infer the service type and propose bookable appointment slots.`;
     sendPrompt(initialPrompt, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,7 +50,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
           pet_name: activeContext?.petName,
           owner_name: activeContext?.ownerName,
           // Session ID for conversation memory
-          session_id: sessionIdRef.current,
+          session_id: sessionId,
         }),
       });
 

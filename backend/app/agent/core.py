@@ -31,21 +31,52 @@ class InterpawsAgent:
         
         # Get current time for the LLM to resolve "tomorrow" or "sunday"
         now_str = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
-        
+
+        # Step 1: Store user message in conversation memory
+        if session_id:
+            CONVERSATION_MEMORY[session_id].append({
+                "role": "user",
+                "content": user_message
+            })
+
+        # Step 2: Retrieve conversation history (last 3 turns = 6 messages)
+        history_text = ""
+        if session_id and CONVERSATION_MEMORY[session_id]:
+            recent_messages = CONVERSATION_MEMORY[session_id][-6:]  # Last 6 messages
+            history_lines = []
+            for msg in recent_messages:
+                role_label = "User" if msg["role"] == "user" else "Agent"
+                history_lines.append(f"{role_label}: {msg['content']}")
+            history_text = "\n".join(history_lines)
+
         # 1. UNDERSTAND: Extract Pet, Complaint, AND Booking Intent
+        # Build history section for the prompt
+        history_section = ""
+        if history_text:
+            history_section = f"""
+        RECENT CONVERSATION HISTORY:
+        {history_text}
+        """
+
         extraction_prompt = f"""
         You are an AI Veterinary Assistant. Your goal is to triage the pet's condition safely.
         Current Date/Time: {now_str}
 
-        User Message: "{user_message}"
+        IMPORTANT: Use the Conversation History to interpret the User Message. If the user answers a previous question (e.g., 'Yes', 'Afternoons', 'I like mornings'), apply it to the current context instead of treating it as a new complaint. For example:
+        - If the Agent asked "Do you prefer mornings or afternoons?" and User says "Afternoons", extract time_preference="afternoons"
+        - If the Agent asked "Would you like to see the calendar?" and User says "Yes", set request_calendar=true
+        - If the Agent asked about a specific day and User confirms, extract the appropriate target_time
+        {history_section}
         Context: Pet="{pet_name or 'Unknown'}", Complaint="{complaint_text or 'Unknown'}"
+
+        User Message: "{user_message}"
 
         Task: Extract medical details. Extract 'pet_species' and 'pet_breed' if mentioned. Infer species from breed (e.g. 'Lab' -> 'Dog', 'Siamese' -> 'Cat'). If the complaint is dangerous (e.g. breathing issues, seizures, bleeding, eating objects), mark 'is_emergency' as true.
         - pet_name: Name of the pet (if mentioned).
         - complaint: Medical issue (if mentioned).
         - target_time: If the user is confirming a slot (e.g. "Book Sunday 9am"), convert it to 'YYYY-MM-DD HH:MM' format. If no specific time is chosen, use null.
         - time_preference: Extract vague time constraints like "mornings", "after 5pm", "weekends", "next Tuesday", "afternoons". If no preference mentioned, use null.
-        - request_calendar: True if user explicitly asks to see the calendar, schedule, or availability (e.g. "show me the calendar", "what's available", "let me see the schedule"). Otherwise false.
+        - request_calendar: True if user explicitly asks to see the calendar, schedule, or availability (e.g. "show me the calendar", "what's available", "let me see the schedule"), OR if User says "Yes" in response to Agent asking about showing the calendar. Otherwise false.
 
         Return JSON ONLY:
         {{
@@ -77,33 +108,54 @@ class InterpawsAgent:
 
         # Emergency Guard Rail - Check immediately after extraction
         if is_emergency:
-            return {
+            response_payload = {
                 "response": "⚠️ This sounds like a medical emergency. Please do not wait for an appointment. Take your pet to the nearest emergency veterinary clinic immediately.",
                 "is_emergency": True,
                 "pet_name": current_pet,
                 "pet_species": current_species,
                 "pet_breed": current_breed
             }
+            # Store agent response in memory
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": response_payload["response"]
+                })
+            return response_payload
 
         # Step A: Missing Pet Name
         if not current_pet:
-            return {
+            response_payload = {
                 "response": "I can help! First, what is your pet's name?",
                 "pet_name": None,
                 "owner_name": owner_name,
                 "pet_species": current_species,
                 "pet_breed": current_breed
             }
+            # Store agent response in memory
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": response_payload["response"]
+                })
+            return response_payload
 
         # Step B: Missing Complaint
         if not current_complaint:
-            return {
+            response_payload = {
                 "response": f"Got it, we're checking for {current_pet}. What seems to be the problem?",
                 "pet_name": current_pet,
                 "owner_name": owner_name,
                 "pet_species": current_species,
                 "pet_breed": current_breed
             }
+            # Store agent response in memory
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": response_payload["response"]
+                })
+            return response_payload
 
         # Step C: BOOKING - If we have a time, BOOK IT.
         if target_time:
@@ -116,7 +168,7 @@ class InterpawsAgent:
             )
             
             if booking_result.get("status") == "success":
-                return {
+                response_payload = {
                     "response": booking_result["message"],
                     "service_type": booking_result.get("service_type"),
                     "pet_name": current_pet,
@@ -124,26 +176,47 @@ class InterpawsAgent:
                     "pet_species": current_species,
                     "pet_breed": current_breed
                 }
+                # Store agent response in memory
+                if session_id:
+                    CONVERSATION_MEMORY[session_id].append({
+                        "role": "agent",
+                        "content": response_payload["response"]
+                    })
+                return response_payload
             else:
                 error_msg = booking_result.get("message", "That slot isn't available.")
-                return {
+                response_payload = {
                     "response": f"{error_msg} Here are other available times:",
                     "pet_name": current_pet,
                     "complaint_text": current_complaint,
                     "pet_species": current_species,
                     "pet_breed": current_breed
                 }
+                # Store agent response in memory
+                if session_id:
+                    CONVERSATION_MEMORY[session_id].append({
+                        "role": "agent",
+                        "content": response_payload["response"]
+                    })
+                return response_payload
 
         # Step D: Suggestion - Find Staff & Slots
         staff_matches = await self.tools.find_staff(current_complaint)
         if not staff_matches:
-            return {
+            response_payload = {
                 "response": "I couldn't find a specialist for that issue. Could you describe it differently?",
                 "pet_name": current_pet,
                 "complaint_text": current_complaint,
                 "pet_species": current_species,
                 "pet_breed": current_breed
             }
+            # Store agent response in memory
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": response_payload["response"]
+                })
+            return response_payload
 
         best_staff = staff_matches[0]
         staff_obj = self.db.query(models.Staff).filter(models.Staff.id == best_staff['id']).first()
@@ -155,7 +228,7 @@ class InterpawsAgent:
         # Condition 1: Explicit Calendar Request
         if request_calendar:
             slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
-            return {
+            response_payload = {
                 "response": f"Here is the availability calendar for Dr. {best_staff['name']}. Please select a date.",
                 "slots": slots[:5],
                 "ui_action": "show_calendar",
@@ -164,16 +237,30 @@ class InterpawsAgent:
                 "pet_species": current_species,
                 "pet_breed": current_breed
             }
+            # Store agent response in memory
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": response_payload["response"]
+                })
+            return response_payload
 
         # Condition 2: No Preferences & No Target Time - Pause to invite input
         if not target_time and not time_preference:
-            return {
+            response_payload = {
                 "response": f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}). Do you have a preference for days or times (e.g., mornings, weekends), or would you like to see the full calendar?",
                 "pet_name": current_pet,
                 "complaint_text": current_complaint,
                 "pet_species": current_species,
                 "pet_breed": current_breed
             }
+            # Store agent response in memory
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": response_payload["response"]
+                })
+            return response_payload
 
         # Condition 3: Preference Provided - Generate slots with preference context
         slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
@@ -192,7 +279,7 @@ class InterpawsAgent:
                 f"Shall I book one? (e.g., 'Yes, Sunday at 9am')"
             )
 
-        return {
+        response_payload = {
             "response": response_msg,
             "slots": slots[:3],
             "pet_name": current_pet,
@@ -200,3 +287,10 @@ class InterpawsAgent:
             "pet_species": current_species,
             "pet_breed": current_breed
         }
+        # Store agent response in memory
+        if session_id:
+            CONVERSATION_MEMORY[session_id].append({
+                "role": "agent",
+                "content": response_payload["response"]
+            })
+        return response_payload

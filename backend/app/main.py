@@ -438,6 +438,25 @@ async def create_booking_by_name(
     start_time = request.preferred_time
     end_time = start_time + timedelta(minutes=duration_minutes)
 
+    # Check if client already has a booking that overlaps with this time
+    existing_bookings = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.client_id == current_user.id,
+            models.Booking.status != "cancelled",
+            models.Booking.start_time < end_time,
+            models.Booking.end_time > start_time
+        )
+        .all()
+    )
+
+    if existing_bookings:
+        existing_time = existing_bookings[0].start_time.strftime("%B %d, %Y at %I:%M %p")
+        raise HTTPException(
+            status_code=400,
+            detail=f"You already have an appointment scheduled at {existing_time}. Please choose a different time slot or cancel your existing appointment first."
+        )
+
     staff_search_text = f"{service_type}: {request.complaint_reason or request.service_type}".strip()
     staff_matches = await AgentTools(db).find_staff(staff_search_text)
     if isinstance(staff_matches, dict):

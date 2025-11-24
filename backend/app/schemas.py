@@ -57,6 +57,7 @@ class PetBase(BaseModel):
     name: str
     species: str
     breed: Optional[str] = None
+    date_of_birth: Optional[datetime] = None
 
 class PetCreate(PetBase):
     pass
@@ -83,6 +84,8 @@ class PetNested(BaseModel):
     id: int
     name: str
     species: str
+    breed: Optional[str] = None
+    date_of_birth: Optional[datetime] = None
     class Config:
         orm_mode = True
 

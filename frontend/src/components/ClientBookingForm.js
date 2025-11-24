@@ -44,6 +44,7 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
   const [petLoading, setPetLoading] = useState(false);
   const [newPetSpecies, setNewPetSpecies] = useState("Dog");
   const [newPetBreed, setNewPetBreed] = useState("");
+  const [newPetDateOfBirth, setNewPetDateOfBirth] = useState("");
   const [serviceType, setServiceType] = useState(serviceOptions[0].value);
   const [appointmentTime, setAppointmentTime] = useState("");
   const [status, setStatus] = useState(null);
@@ -106,7 +107,8 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
         body: JSON.stringify({
           name: petName,
           species: newPetSpecies,
-          breed: newPetBreed
+          breed: newPetBreed,
+          date_of_birth: newPetDateOfBirth || null
         }),
       });
 
@@ -235,6 +237,17 @@ export default function ClientBookingForm({ complaint, setComplaint, aiChatRef }
                       className="h-8"
                     />
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="dob-input" className="text-xs">Date of Birth (optional)</Label>
+                  <Input
+                    id="dob-input"
+                    type="date"
+                    value={newPetDateOfBirth}
+                    onChange={(e) => setNewPetDateOfBirth(e.target.value)}
+                    className="h-8"
+                  />
                 </div>
 
                 <Button type="button" size="sm" className="w-full" onClick={handleCreatePet}>

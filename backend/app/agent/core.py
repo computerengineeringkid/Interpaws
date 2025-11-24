@@ -74,9 +74,11 @@ class InterpawsAgent:
         Task: Extract medical details. Extract 'pet_species' and 'pet_breed' if mentioned. Infer species from breed (e.g. 'Lab' -> 'Dog', 'Siamese' -> 'Cat'). If the complaint is dangerous (e.g. breathing issues, seizures, bleeding, eating objects), mark 'is_emergency' as true.
         - pet_name: Name of the pet (if mentioned).
         - complaint: Medical issue (if mentioned).
-        - target_time: If the user is confirming a slot (e.g. "Book Sunday 9am"), convert it to 'YYYY-MM-DD HH:MM' format. If no specific time is chosen, use null.
-        - time_preference: Extract vague time constraints like "mornings", "after 5pm", "weekends", "next Tuesday", "afternoons". If no preference mentioned, use null.
+        - target_time: If the user is CONFIRMING/BOOKING a specific slot they chose (e.g. "Book that 2pm slot", "Let's do Tuesday at 3pm"), convert it to 'YYYY-MM-DD HH:MM' format. If no specific time is being BOOKED, use null.
+        - check_specific_time: If the user is ASKING about a specific time's availability (e.g. "Do you have 1pm?", "Is 2pm available?", "anything at 3pm?"), extract that time in 'HH:MM' format. Otherwise null.
+        - time_preference: Extract general constraints like 'mornings' (before 12pm), 'afternoons' (12-5pm), 'evenings' (after 5pm), 'weekends'. If none, use null.
         - request_calendar: True if user explicitly asks to see the calendar, schedule, or availability (e.g. "show me the calendar", "what's available", "let me see the schedule"), OR if User says "Yes" in response to Agent asking about showing the calendar. Otherwise false.
+        - is_question: True if the user is asking for advice, recommendations, or information (e.g., "What should I do?", "Do you recommend any treatment?", "Should I be worried?", "How do I care for my pet?"). False if they're trying to book an appointment.
 
         Return JSON ONLY:
         {{
@@ -86,8 +88,10 @@ class InterpawsAgent:
             "complaint": "...",
             "is_emergency": true or false,
             "target_time": "2025-11-XX 09:00" or null,
+            "check_specific_time": "13:00" or null,
             "time_preference": "mornings" or null,
-            "request_calendar": true or false
+            "request_calendar": true or false,
+            "is_question": true or false
         }}
         """
         
@@ -98,11 +102,13 @@ class InterpawsAgent:
         current_pet = data.get("pet_name") or pet_name
         current_complaint = data.get("complaint") or complaint_text
         target_time = data.get("target_time")
+        check_specific_time = data.get("check_specific_time")
         current_species = data.get("pet_species")
         current_breed = data.get("pet_breed")
         is_emergency = data.get("is_emergency")
         time_preference = data.get("time_preference")
         request_calendar = data.get("request_calendar", False)
+        is_question = data.get("is_question", False)
 
         # 3. LOGIC FLOW (The "Railroad")
 
@@ -157,6 +163,36 @@ class InterpawsAgent:
                 })
             return response_payload
 
+        # Step B.5: Handle Questions/Advice Requests
+        if is_question and current_pet and current_complaint:
+            advice_prompt = f"""
+            You are a helpful veterinary assistant. The pet owner is asking for advice about their pet.
+
+            Pet: {current_pet}
+            Issue: {current_complaint}
+            Owner's Question: {user_message}
+
+            Provide brief, helpful advice (2-3 sentences). If it's a serious issue, remind them to follow up with the vet at their appointment.
+            Keep it friendly and reassuring. DO NOT offer to book appointments - they've already been booked or will book separately.
+            """
+            advice_response = await get_ollama_recommendation(advice_prompt)
+
+            response_payload = {
+                "response": advice_response,
+                "pet_name": current_pet,
+                "complaint_text": current_complaint,
+                "pet_species": current_species,
+                "pet_breed": current_breed
+            }
+
+            if session_id:
+                CONVERSATION_MEMORY[session_id].append({
+                    "role": "agent",
+                    "content": advice_response
+                })
+
+            return response_payload
+
         # Step C: BOOKING - If we have a time, BOOK IT.
         if target_time:
             # FIX: Added 'await' here to solve the "cannot unpack non-iterable coroutine object" error
@@ -203,94 +239,93 @@ class InterpawsAgent:
         # Step D: Suggestion - Find Staff & Slots
         staff_matches = await self.tools.find_staff(current_complaint)
         if not staff_matches:
-            response_payload = {
-                "response": "I couldn't find a specialist for that issue. Could you describe it differently?",
-                "pet_name": current_pet,
-                "complaint_text": current_complaint,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
-            # Store agent response in memory
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": response_payload["response"]
-                })
-            return response_payload
+             return {
+                 "response": "I couldn't find a specialist for that issue. Could you describe it differently?",
+                 "pet_name": current_pet,
+                 "complaint_text": current_complaint
+             }
 
         best_staff = staff_matches[0]
         staff_obj = self.db.query(models.Staff).filter(models.Staff.id == best_staff['id']).first()
 
-        # Build pet description with species/breed info
-        pet_description = current_breed or current_species or "pet"
+        # 1. Generate a larger pool of slots so we have options to filter
+        all_slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30, max_slots=15)
 
-        # ===== NEGOTIATION STEP =====
-        # Condition 1: Explicit Calendar Request
-        if request_calendar:
-            slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
-            response_payload = {
-                "response": f"Here is the availability calendar for Dr. {best_staff['name']}. Please select a date.",
-                "slots": slots[:5],
-                "ui_action": "show_calendar",
-                "pet_name": current_pet,
-                "complaint_text": current_complaint,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
-            # Store agent response in memory
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": response_payload["response"]
-                })
-            return response_payload
+        # 2. Apply AI-Driven Filtering (The "Control" Layer)
+        final_slots = []
+        response_intro = ""
 
-        # Condition 2: No Preferences & No Target Time - Pause to invite input
-        if not target_time and not time_preference:
-            response_payload = {
-                "response": f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}). Do you have a preference for days or times (e.g., mornings, weekends), or would you like to see the full calendar?",
-                "pet_name": current_pet,
-                "complaint_text": current_complaint,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
-            # Store agent response in memory
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": response_payload["response"]
-                })
-            return response_payload
+        # 2a. Handle specific time checks (e.g., "Do you have 1pm?")
+        if check_specific_time:
+            # Parse the requested time (format: "HH:MM" or "H:MM")
+            try:
+                requested_hour = int(check_specific_time.split(':')[0])
+                requested_minute = int(check_specific_time.split(':')[1]) if ':' in check_specific_time else 0
 
-        # Condition 3: Preference Provided - Generate slots with preference context
-        slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30)
-        slot_text = "\n".join([f"- {s['start_time'].strftime('%A %I:%M %p')}" for s in slots[:3]])
+                # Find exact or closest matches
+                exact_match = None
+                close_matches = []
 
-        if time_preference:
-            response_msg = (
-                f"I've looked for {time_preference} slots with Dr. {best_staff['name']} for {current_pet}.\n"
-                f"Available openings:\n{slot_text}\n\n"
-                f"Shall I book one? (e.g., 'Yes, Sunday at 9am')"
-            )
+                for s in all_slots:
+                    if s['start_time'].hour == requested_hour and s['start_time'].minute == requested_minute:
+                        exact_match = s
+                        break
+                    # Also collect nearby times (within 1 hour)
+                    time_diff = abs((s['start_time'].hour * 60 + s['start_time'].minute) - (requested_hour * 60 + requested_minute))
+                    if time_diff <= 120:  # Within 2 hours
+                        close_matches.append(s)
+
+                if exact_match:
+                    response_intro = f"Yes! I have {check_specific_time} available with Dr. {best_staff['name']}. Would you like to book that time?"
+                    final_slots = [exact_match]
+                elif close_matches:
+                    response_intro = f"I don't have exactly {check_specific_time} available, but I have these nearby times with Dr. {best_staff['name']}:"
+                    final_slots = sorted(close_matches, key=lambda x: abs((x['start_time'].hour * 60 + x['start_time'].minute) - (requested_hour * 60 + requested_minute)))[:3]
+                else:
+                    response_intro = f"Unfortunately, I don't have {check_specific_time} or any nearby times available. Here are the next available slots with Dr. {best_staff['name']}:"
+                    final_slots = all_slots[:3]
+            except (ValueError, IndexError):
+                # If parsing fails, fall back to showing all slots
+                response_intro = f"Let me show you what's available with Dr. {best_staff['name']}:"
+                final_slots = all_slots[:3]
+
+        elif time_preference:
+            time_lower = time_preference.lower()
+            for s in all_slots:
+                h = s['start_time'].hour
+                if "morning" in time_lower and h < 12: final_slots.append(s)
+                elif "afternoon" in time_lower and 12 <= h < 17: final_slots.append(s)
+                elif "evening" in time_lower and h >= 17: final_slots.append(s)
+                elif "weekend" in time_lower and s['start_time'].weekday() >= 5: final_slots.append(s)
+
+            # Intelligent Fallback
+            if not final_slots:
+                response_intro = f"I checked for **{time_preference}** appointments with Dr. {best_staff['name']}, but those times are fully booked. Here are the closest alternatives:"
+                final_slots = all_slots[:3]
+            else:
+                response_intro = f"Got it! I found these **{time_preference}** openings with Dr. {best_staff['name']} ({best_staff['role']}):"
+                final_slots = final_slots[:3]
         else:
-            response_msg = (
-                f"For {current_pet} (a {pet_description} with {current_complaint}), I recommend Dr. {best_staff['name']} ({best_staff['role']}).\n"
-                f"Available openings:\n{slot_text}\n\n"
-                f"Shall I book one? (e.g., 'Yes, Sunday at 9am')"
-            )
+            # Standard Triage Response
+            species_context = f" ({current_breed} {current_species})" if current_species and current_breed else ""
+            response_intro = f"For {current_pet}{species_context} and the concern '{current_complaint}', I recommend Dr. {best_staff['name']} ({best_staff['role']}). Here are their next openings:"
+            final_slots = all_slots[:3]
 
-        response_payload = {
-            "response": response_msg,
-            "slots": slots[:3],
-            "pet_name": current_pet,
-            "complaint_text": current_complaint,
-            "pet_species": current_species,
-            "pet_breed": current_breed
-        }
-        # Store agent response in memory
+        # 3. Format and Return
+        slot_text = "\n".join([f"- {s['start_time'].strftime('%A, %b %d at %I:%M %p')}" for s in final_slots])
+
+        # Memory update for the agent's own context
+        response_msg = f"{response_intro}\n\n{slot_text}\n\nShall I book one of these?"
+
         if session_id:
             CONVERSATION_MEMORY[session_id].append({
                 "role": "agent",
-                "content": response_payload["response"]
+                "content": response_msg
             })
-        return response_payload
+
+        return {
+            "response": response_msg,
+            "slots": final_slots,
+            "pet_name": current_pet,
+            "complaint_text": current_complaint
+        }

@@ -23,6 +23,15 @@ from .ai_services import (
 )
 from .agent import InterpawsAgent
 from .agent.tools import AgentTools
+
+# Try to import enhanced agent, but don't fail if semantic_router isn't available
+try:
+    from .agent.enhanced_core import EnhancedInterpawsAgent
+    ENHANCED_AGENT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Enhanced agent not available: {e}")
+    EnhancedInterpawsAgent = None
+    ENHANCED_AGENT_AVAILABLE = False
 from .auth import (
     get_password_hash,
     authenticate_client,
@@ -293,6 +302,54 @@ def get_my_pets(
     return pets
 
 
+@app.get("/pets/search", tags=["Pets", "Admin"])
+def search_pets_by_name_and_owner(
+    pet_name: Optional[str] = Query(None, description="Pet name to search"),
+    owner_name: Optional[str] = Query(None, description="Owner name to search"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Staff endpoint: Search for pets by pet name and/or owner name with detailed info"""
+    from sqlalchemy.orm import joinedload
+    from datetime import datetime
+
+    query = db.query(models.Pet).options(joinedload(models.Pet.client))
+
+    if pet_name:
+        query = query.filter(models.Pet.name.ilike(f"%{pet_name}%"))
+
+    if owner_name:
+        query = query.join(models.Client).filter(models.Client.name.ilike(f"%{owner_name}%"))
+
+    pets = query.limit(10).all()
+
+    # Calculate age if date_of_birth exists
+    result = []
+    for pet in pets:
+        pet_dict = {
+            "id": pet.id,
+            "name": pet.name,
+            "species": pet.species,
+            "breed": pet.breed,
+            "date_of_birth": pet.date_of_birth,
+            "client_id": pet.client_id,
+            "owner_name": pet.client.name if hasattr(pet, 'client') and pet.client else None,
+            "owner_email": pet.client.email if hasattr(pet, 'client') and pet.client else None,
+        }
+
+        if pet.date_of_birth:
+            age_delta = datetime.now() - pet.date_of_birth
+            years = age_delta.days // 365
+            months = (age_delta.days % 365) // 30
+            pet_dict["age"] = f"{years} years, {months} months"
+        else:
+            pet_dict["age"] = "Unknown"
+
+        result.append(pet_dict)
+
+    return result
+
+
 @app.post("/pets", response_model=schemas.Pet, tags=["Pets"])
 def create_pet(
     pet: schemas.PetCreate,
@@ -320,6 +377,7 @@ def create_pet(
         name=pet.name,
         species=pet.species or "Unknown",
         breed=pet.breed or "",
+        date_of_birth=pet.date_of_birth,
         client_id=current_user.id,
     )
     db.add(db_pet)
@@ -381,7 +439,7 @@ async def create_booking_by_name(
     end_time = start_time + timedelta(minutes=duration_minutes)
 
     staff_search_text = f"{service_type}: {request.complaint_reason or request.service_type}".strip()
-    staff_matches = AgentTools(db).find_staff(staff_search_text)
+    staff_matches = await AgentTools(db).find_staff(staff_search_text)
     if isinstance(staff_matches, dict):
         raise HTTPException(status_code=400, detail=staff_matches.get("message", "Unable to find staff for that service."))
 
@@ -426,9 +484,29 @@ async def get_my_bookings(
 
 @app.get("/bookings/{date}", response_model=List[schemas.Booking])
 async def get_bookings_for_date(date: date, current_admin: models.Staff = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
     return (
         db.query(models.Booking)
+        .options(joinedload(models.Booking.client), joinedload(models.Booking.pet), joinedload(models.Booking.staff))
         .filter(cast(models.Booking.start_time, Date) == date)
+        .all()
+    )
+
+
+@app.get("/bookings/staff/my-schedule/{date}", response_model=List[schemas.Booking], tags=["Bookings", "Staff"])
+async def get_my_staff_schedule(
+    date: date,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get bookings for the currently authenticated staff member for a specific date."""
+    from sqlalchemy.orm import joinedload
+    return (
+        db.query(models.Booking)
+        .options(joinedload(models.Booking.client), joinedload(models.Booking.pet), joinedload(models.Booking.staff))
+        .filter(cast(models.Booking.start_time, Date) == date)
+        .filter(models.Booking.staff_id == current_admin.id)
+        .order_by(models.Booking.start_time)
         .all()
     )
 
@@ -927,11 +1005,13 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
         )
 
         if isinstance(agent_result, dict):
-            slots = _normalize_slots(agent_result.get("tool_output"))
-            service_type = None
-            tool_output = agent_result.get("tool_output")
-            if isinstance(tool_output, dict):
-                service_type = tool_output.get("service_type")
+            # Check for slots in both direct response and tool_output for backward compatibility
+            slots = agent_result.get("slots") or _normalize_slots(agent_result.get("tool_output"))
+            service_type = agent_result.get("service_type")
+            if not service_type:
+                tool_output = agent_result.get("tool_output")
+                if isinstance(tool_output, dict):
+                    service_type = tool_output.get("service_type")
             return ChatResponse(
                 response=agent_result.get("response", ""),
                 slots=slots or None,
@@ -942,6 +1022,70 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     except Exception as e:
         import traceback
         print(f"Agent chat error: {e}")
+        traceback.print_exc()
+        # Return a user-friendly error message
+        error_msg = str(e)
+        if "connect" in error_msg.lower() or "connection" in error_msg.lower():
+            return ChatResponse(
+                response="I'm having trouble connecting to the AI service. Please ensure Ollama is running and try again."
+            )
+        return ChatResponse(
+            response=f"I encountered an error while processing your request. Please try again. (Error: {error_msg})"
+        )
+
+
+@app.post("/agent/chat/enhanced", response_model=ChatResponse, tags=["AI Chat"])
+async def enhanced_agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
+    """
+    Enhanced agentic chat endpoint with smart intent classification.
+
+    Uses semantic-router to classify user intents (booking, cancellation, emergency, etc.)
+    and route to specialized handlers for better context understanding.
+    """
+    if not ENHANCED_AGENT_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Enhanced agent is not available. Please install semantic-router: pip install semantic-router"
+        )
+
+    try:
+        agent = EnhancedInterpawsAgent(db)
+        context = f"User context: complaint details - {request.complaint_text}. IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."
+
+        agent_result = await agent.chat(
+            request.prompt,
+            context=context,
+            session_id=request.session_id,
+            prior_history=request.conversation_history,
+            client_email=request.client_email,
+            complaint_text=request.complaint_text,
+            # Persistent Context Pattern: forward known entity names
+            pet_name=request.pet_name,
+            owner_name=request.owner_name,
+        )
+
+        if isinstance(agent_result, dict):
+            # Extract slots if present
+            slots = agent_result.get("slots")
+            if slots and not isinstance(slots, list):
+                slots = _normalize_slots({"slots": slots})
+
+            # Get service type if present
+            service_type = agent_result.get("service_type")
+
+            # Get intent if present
+            intent = agent_result.get("intent")
+
+            return ChatResponse(
+                response=agent_result.get("response", ""),
+                slots=slots or None,
+                service_type=service_type,
+            )
+
+        return ChatResponse(response=str(agent_result))
+    except Exception as e:
+        import traceback
+        print(f"Enhanced agent chat error: {e}")
         traceback.print_exc()
         # Return a user-friendly error message
         error_msg = str(e)

@@ -183,6 +183,8 @@ class ChatResponse(BaseModel):
     response: str
     slots: Optional[List[SuggestedSlot]] = None
     service_type: Optional[str] = None
+    ui_action: Optional[str] = None
+    suggested_date: Optional[datetime] = None
 
 class AIFeedbackLogResponse(BaseModel):
     id: int

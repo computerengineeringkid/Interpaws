@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_OLLAMA_MODEL = "llama3"  # Stabilized single-model policy
+DEFAULT_OLLAMA_MODEL = "llama3.2:3b"  # Smaller model for faster M3 Pro inference
 _EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 _embedding_model: SentenceTransformer | None = None
 _embedding_model_lock = asyncio.Lock()

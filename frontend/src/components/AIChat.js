@@ -14,6 +14,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
   const [isLoading, setIsLoading] = useState(false);
   const [activeContext, setActiveContext] = useState(null);
   const [sessionId] = useState(() => Math.random().toString(36).substring(7));
+  const [isBooking, setIsBooking] = useState(false);
 
   useImperativeHandle(ref, () => ({
     getChatHistory: () => messages.map((m) => `${m.role === "user" ? "Client" : "AI"}: ${m.content}`).join("\n"),
@@ -83,6 +84,11 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
   };
 
   const handleSlotSelection = async (slot, serviceTypeHint) => {
+    // Prevent multiple simultaneous bookings
+    if (isBooking) {
+      return;
+    }
+
     if (!activeContext) {
       setMessages((prev) => [
         ...prev,
@@ -98,6 +104,8 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
       ]);
       return;
     }
+
+    setIsBooking(true);
 
     try {
       const response = await fetchWithAuth("/api/bookings/by-name", {
@@ -131,6 +139,8 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
         ...prev,
         { role: "ai", content: err.message || "Unable to book that slot." },
       ]);
+    } finally {
+      setIsBooking(false);
     }
   };
 
@@ -189,6 +199,7 @@ const AIChat = forwardRef(({ token, context, startSignal = 0, onBookingComplete 
                             size="sm"
                             variant="outline"
                             onClick={() => handleSlotSelection(slot, m?.serviceType)}
+                            disabled={isBooking}
                           >
                             {new Date(slotStart).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                             {slot?.staff_name ? ` • ${slot.staff_name}` : ""}

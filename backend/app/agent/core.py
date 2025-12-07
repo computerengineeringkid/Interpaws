@@ -164,34 +164,54 @@ class InterpawsAgent:
             return response_payload
 
         # Step B.5: Handle Questions/Advice Requests
+        # BUT: Check if we've been giving advice repeatedly and the issue persists
         if is_question and current_pet and current_complaint:
-            advice_prompt = f"""
-            You are a helpful veterinary assistant. The pet owner is asking for advice about their pet.
+            # Check conversation history for repeated advice giving
+            advice_count = 0
+            if session_id and CONVERSATION_MEMORY[session_id]:
+                for msg in CONVERSATION_MEMORY[session_id]:
+                    if msg["role"] == "agent" and any(keyword in msg["content"].lower() for keyword in ["try", "recommend", "make sure", "keep", "watch"]):
+                        advice_count += 1
 
-            Pet: {current_pet}
-            Issue: {current_complaint}
-            Owner's Question: {user_message}
+            # Check if user is expressing persistence/concern ("still", "ongoing", "keeps", "continues")
+            is_persistent = any(word in user_message.lower() for word in ["still", "ongoing", "keeps", "continues", "not working", "persists", "hasn't stopped", "won't stop", "quite a lot", "getting worse"])
 
-            Provide brief, helpful advice (2-3 sentences). If it's a serious issue, remind them to follow up with the vet at their appointment.
-            Keep it friendly and reassuring. DO NOT offer to book appointments - they've already been booked or will book separately.
-            """
-            advice_response = await get_ollama_recommendation(advice_prompt)
+            # Check if user is expressing worry or concern
+            is_worried = any(word in user_message.lower() for word in ["worried", "concerned", "scared", "afraid", "serious", "bad", "emergency"])
 
-            response_payload = {
-                "response": advice_response,
-                "pet_name": current_pet,
-                "complaint_text": current_complaint,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
+            # If we've given advice 1+ time OR user expresses persistence OR user is worried, transition to booking
+            if advice_count >= 1 or is_persistent or is_worried:
+                # Skip to booking flow - don't return here, let it fall through to Step D
+                pass
+            else:
+                # Give advice one more time
+                advice_prompt = f"""
+                You are a helpful veterinary assistant. The pet owner is asking for advice about their pet.
 
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": advice_response
-                })
+                Pet: {current_pet}
+                Issue: {current_complaint}
+                Owner's Question: {user_message}
 
-            return response_payload
+                Provide brief, helpful advice (2-3 sentences). If it's a serious issue or if this is a persistent problem, end by saying: "If the issue persists, I recommend scheduling an appointment with our veterinarian."
+                Keep it friendly and reassuring.
+                """
+                advice_response = await get_ollama_recommendation(advice_prompt)
+
+                response_payload = {
+                    "response": advice_response,
+                    "pet_name": current_pet,
+                    "complaint_text": current_complaint,
+                    "pet_species": current_species,
+                    "pet_breed": current_breed
+                }
+
+                if session_id:
+                    CONVERSATION_MEMORY[session_id].append({
+                        "role": "agent",
+                        "content": advice_response
+                    })
+
+                return response_payload
 
         # Step C: BOOKING - If we have a time, BOOK IT.
         if target_time:
@@ -255,8 +275,16 @@ class InterpawsAgent:
         final_slots = []
         response_intro = ""
 
-        # 2a. Handle specific time checks (e.g., "Do you have 1pm?")
-        if check_specific_time:
+        # Check if this is a transition from advice to booking (persistent issue)
+        is_persistent_issue = any(word in user_message.lower() for word in ["still", "ongoing", "keeps", "continues", "not working", "persists", "hasn't stopped", "won't stop", "quite a lot", "getting worse"])
+
+        # 2a. Handle persistent issues first - prioritize getting them scheduled
+        if is_persistent_issue and not check_specific_time and not time_preference:
+            response_intro = f"I understand {current_pet}'s {current_complaint} is ongoing. Let's get you in to see our veterinarian. I recommend Dr. {best_staff['name']} ({best_staff['role']}). Here are their next available appointments:"
+            final_slots = all_slots[:3]
+
+        # 2b. Handle specific time checks (e.g., "Do you have 1pm?")
+        elif check_specific_time:
             # Parse the requested time (format: "HH:MM" or "H:MM")
             try:
                 requested_hour = int(check_specific_time.split(':')[0])

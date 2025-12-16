@@ -1,5 +1,5 @@
 # Backend Dockerfile
-FROM python:3.10-slim
+FROM python:3.10-slim-bookworm
 
 # Prevents Python from writing pyc files and enables stdout/stderr unbuffered
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,7 +13,7 @@ COPY requirements.txt /code/
 
 # Install OS and Python dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl bash \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt

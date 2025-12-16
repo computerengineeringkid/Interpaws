@@ -3,15 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { 
-  LayoutDashboard, 
-  CalendarDays, 
-  Users, 
-  Stethoscope, 
-  Pill, 
-  Syringe, 
+import {
+  LayoutDashboard,
+  CalendarDays,
+  Users,
+  Stethoscope,
+  Pill,
+  Syringe,
   LogOut,
-  Settings
+  Settings,
+  Package,
+  BarChart3,
+  Mail,
+  DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -30,7 +34,10 @@ export default function AdminSidebar() {
     { href: "/admin/clients", label: "Clients & Patients", icon: Users },
     { href: "/admin/staff", label: "Staff Management", icon: Stethoscope },
     { href: "/admin/surgeries", label: "Surgeries", icon: Syringe },
-    { href: "/admin/medications", label: "Inventory", icon: Pill },
+    { href: "/admin/inventory", label: "Inventory", icon: Package },
+    { href: "/admin/services", label: "Services & Pricing", icon: DollarSign },
+    { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/admin/outreach", label: "Client Outreach", icon: Mail },
   ];
 
   return (

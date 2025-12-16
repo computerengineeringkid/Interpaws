@@ -22,8 +22,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/interpawsdb
-      OLLAMA_HOST: http://host.docker.internal:11434
-      OLLAMA_MODEL: llama3
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
       SENDGRID_FROM_EMAIL: "no-reply@interpaws.com"
     volumes:
@@ -35,8 +34,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   frontend:
     build:

@@ -13,7 +13,7 @@ from sqlalchemy import Date, cast, text, func, desc
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCreate, StaffUpdate, BookingUpdate
+from .schemas import ChatRequest, ChatResponse, SmartChatRequest, Staff, StaffCreate, StaffUpdate, BookingUpdate, StaffChatRequest, StaffChatResponse
 from .booking_logic import check_availability
 from .database import engine, SessionLocal
 from .ai_services import (
@@ -21,17 +21,8 @@ from .ai_services import (
     get_embedding,
     get_ollama_recommendation,
 )
-from .agent import InterpawsAgent
+from .agent import InterpawsAgent, StaffAgent
 from .agent.tools import AgentTools
-
-# Try to import enhanced agent, but don't fail if semantic_router isn't available
-try:
-    from .agent.enhanced_core import EnhancedInterpawsAgent
-    ENHANCED_AGENT_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Enhanced agent not available: {e}")
-    EnhancedInterpawsAgent = None
-    ENHANCED_AGENT_AVAILABLE = False
 from .auth import (
     get_password_hash,
     authenticate_client,
@@ -276,6 +267,46 @@ def refresh_token_endpoint(request: schemas.TokenRefreshRequest):
 async def get_current_client(current_user: models.Client = Depends(get_current_user)):
     """Get the currently authenticated client's details."""
     return current_user
+
+
+@app.get("/clients", tags=["Clients"])
+async def get_all_clients(
+    search: Optional[str] = Query(None, description="Search by name or email"),
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(10, ge=1, le=100, description="Items per page"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get paginated list of clients (admin only)."""
+    query = db.query(models.Client)
+
+    if search:
+        query = query.filter(
+            (models.Client.name.ilike(f"%{search}%")) |
+            (models.Client.email.ilike(f"%{search}%"))
+        )
+
+    total = query.count()
+    clients = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    # Get pet counts for each client
+    result = []
+    for client in clients:
+        pet_count = db.query(models.Pet).filter(models.Pet.client_id == client.id).count()
+        result.append({
+            "id": client.id,
+            "name": client.name,
+            "email": client.email,
+            "pet_count": pet_count
+        })
+
+    return {
+        "clients": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page
+    }
 
 
 # ============================================
@@ -1006,19 +1037,17 @@ IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly
 
 @app.post("/agent/chat", response_model=ChatResponse, tags=["AI Chat"])
 async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
-    """Agentic ReAct chat endpoint with conversation memory and pattern learning."""
+    """Agentic chat endpoint with Gemini function calling and conversation memory."""
     try:
-        agent = InterpawsAgent(db)
-        context = f"User context: complaint details - {request.complaint_text}. IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."
+        # Create agent with client email for context
+        agent = InterpawsAgent(db, client_email=request.client_email)
 
         agent_result = await agent.chat(
             request.prompt,
-            context=context,
             session_id=request.session_id,
             prior_history=request.conversation_history,
             client_email=request.client_email,
             complaint_text=request.complaint_text,
-            # Persistent Context Pattern: forward known entity names
             pet_name=request.pet_name,
             owner_name=request.owner_name,
         )
@@ -1056,29 +1085,21 @@ async def agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
 @app.post("/agent/chat/enhanced", response_model=ChatResponse, tags=["AI Chat"])
 async def enhanced_agent_chat(request: SmartChatRequest, db: Session = Depends(get_db)):
     """
-    Enhanced agentic chat endpoint with smart intent classification.
+    Enhanced agentic chat endpoint with Gemini function calling.
 
-    Uses semantic-router to classify user intents (booking, cancellation, emergency, etc.)
-    and route to specialized handlers for better context understanding.
+    Uses Gemini's native function calling for intelligent conversation routing.
+    This endpoint now uses the same agentic architecture as /agent/chat.
     """
-    if not ENHANCED_AGENT_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Enhanced agent is not available. Please install semantic-router: pip install semantic-router"
-        )
-
     try:
-        agent = EnhancedInterpawsAgent(db)
-        context = f"User context: complaint details - {request.complaint_text}. IMPORTANT: Do not invent or guess pet names. If the pet's name is not explicitly provided in the context, refer to it only as 'your pet'. Do not use example names like Max or Buddy."
+        # Use the agentic InterpawsAgent with Gemini function calling
+        agent = InterpawsAgent(db, client_email=request.client_email)
 
         agent_result = await agent.chat(
             request.prompt,
-            context=context,
             session_id=request.session_id,
             prior_history=request.conversation_history,
             client_email=request.client_email,
             complaint_text=request.complaint_text,
-            # Persistent Context Pattern: forward known entity names
             pet_name=request.pet_name,
             owner_name=request.owner_name,
         )
@@ -1091,9 +1112,6 @@ async def enhanced_agent_chat(request: SmartChatRequest, db: Session = Depends(g
 
             # Get service type if present
             service_type = agent_result.get("service_type")
-
-            # Get intent if present
-            intent = agent_result.get("intent")
 
             return ChatResponse(
                 response=agent_result.get("response", ""),
@@ -1114,6 +1132,46 @@ async def enhanced_agent_chat(request: SmartChatRequest, db: Session = Depends(g
             )
         return ChatResponse(
             response=f"I encountered an error while processing your request. Please try again. (Error: {error_msg})"
+        )
+
+
+@app.post("/staff/agent/chat", response_model=StaffChatResponse, tags=["Staff AI"])
+async def staff_agent_chat(
+    request: StaffChatRequest,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Staff AI Agent endpoint with semantic intent routing.
+
+    Handles staff-specific queries:
+    - Schedule management (view appointments, check availability)
+    - Patient/client lookup (search pets, view history)
+    - Inventory management (check medication stock)
+    - Triage assistance (assess symptom urgency)
+    - Analytics (booking statistics, trends)
+    - Admin booking (book appointments on behalf of clients)
+    """
+    try:
+        agent = StaffAgent(db, current_admin)
+        result = await agent.chat(
+            request.prompt,
+            session_id=request.session_id
+        )
+
+        return StaffChatResponse(
+            response=result.get("response", ""),
+            data=result.get("data"),
+            intent=result.get("intent"),
+            suggestions=result.get("suggestions")
+        )
+    except Exception as e:
+        import traceback
+        print(f"Staff agent chat error: {e}")
+        traceback.print_exc()
+        return StaffChatResponse(
+            response="I encountered an error processing your request. Please try again.",
+            intent="error"
         )
 
 
@@ -1813,10 +1871,937 @@ def delete_medication(
 ):
     """Delete a medication. Admin only."""
     db_medication = db.query(models.Medication).filter(models.Medication.id == medication_id).first()
-    
+
     if not db_medication:
         raise HTTPException(status_code=404, detail="Medication not found")
-    
+
     db.delete(db_medication)
     db.commit()
     return {"ok": True}
+
+
+# ============================================
+# Comprehensive Inventory Endpoints
+# ============================================
+
+INVENTORY_CATEGORIES = ["medications", "equipment", "supplies", "surgical", "diagnostic", "office"]
+
+@app.get("/inventory/categories", tags=["Inventory"])
+def get_inventory_categories(
+    current_admin: models.Staff = Depends(get_current_admin_user)
+):
+    """Get list of valid inventory categories."""
+    return {
+        "categories": INVENTORY_CATEGORIES,
+        "descriptions": {
+            "medications": "Pharmaceuticals, vaccines, antibiotics, pain relief",
+            "equipment": "Durable medical equipment, monitors, surgical tables",
+            "supplies": "Disposable items, bandages, syringes, gloves",
+            "surgical": "Surgical instruments, scalpels, forceps, sutures",
+            "diagnostic": "Testing supplies, lab equipment, imaging supplies",
+            "office": "Administrative supplies, forms, cleaning products"
+        }
+    }
+
+
+@app.post("/inventory", response_model=schemas.InventoryItem, tags=["Inventory"])
+def create_inventory_item(
+    item: schemas.InventoryItemCreate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new inventory item. Admin only."""
+    if item.category not in INVENTORY_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid category. Must be one of: {', '.join(INVENTORY_CATEGORIES)}"
+        )
+
+    db_item = models.InventoryItem(
+        **item.model_dump(),
+        last_restocked=datetime.utcnow() if item.stock_quantity > 0 else None
+    )
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
+@app.get("/inventory", response_model=List[schemas.InventoryItem], tags=["Inventory"])
+def get_inventory_items(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    subcategory: Optional[str] = Query(None, description="Filter by subcategory"),
+    low_stock: Optional[bool] = Query(None, description="Filter for low stock items"),
+    search: Optional[str] = Query(None, description="Search by name or SKU"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all inventory items with optional filters. Admin only."""
+    query = db.query(models.InventoryItem).filter(models.InventoryItem.is_active == True)
+
+    if category:
+        query = query.filter(models.InventoryItem.category == category)
+    if subcategory:
+        query = query.filter(models.InventoryItem.subcategory == subcategory)
+    if low_stock:
+        query = query.filter(models.InventoryItem.stock_quantity <= models.InventoryItem.min_stock_level)
+    if search:
+        query = query.filter(
+            (models.InventoryItem.name.ilike(f"%{search}%")) |
+            (models.InventoryItem.sku.ilike(f"%{search}%"))
+        )
+
+    return query.order_by(models.InventoryItem.category, models.InventoryItem.name).all()
+
+
+@app.get("/inventory/summary", response_model=schemas.InventorySummary, tags=["Inventory"])
+def get_inventory_summary(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get inventory summary with category breakdown. Admin only."""
+    items = db.query(models.InventoryItem).filter(models.InventoryItem.is_active == True).all()
+
+    total_items = len(items)
+    total_value = sum((item.unit_cost or 0) * item.stock_quantity for item in items)
+    low_stock_items = sum(1 for item in items if item.stock_quantity <= item.min_stock_level and item.stock_quantity > 0)
+    out_of_stock_items = sum(1 for item in items if item.stock_quantity == 0)
+
+    # Count items expiring within 30 days
+    expiry_cutoff = datetime.utcnow() + timedelta(days=30)
+    expiring_soon = sum(1 for item in items if item.expiration_date and item.expiration_date <= expiry_cutoff)
+
+    # Category breakdown
+    category_stats = {}
+    for item in items:
+        if item.category not in category_stats:
+            category_stats[item.category] = {
+                "category": item.category,
+                "total_items": 0,
+                "low_stock_count": 0,
+                "out_of_stock_count": 0,
+                "total_value": 0
+            }
+
+        stats = category_stats[item.category]
+        stats["total_items"] += 1
+        stats["total_value"] += (item.unit_cost or 0) * item.stock_quantity
+        if item.stock_quantity == 0:
+            stats["out_of_stock_count"] += 1
+        elif item.stock_quantity <= item.min_stock_level:
+            stats["low_stock_count"] += 1
+
+    return schemas.InventorySummary(
+        total_items=total_items,
+        total_value=total_value,
+        low_stock_items=low_stock_items,
+        out_of_stock_items=out_of_stock_items,
+        expiring_soon=expiring_soon,
+        category_breakdown=[
+            schemas.InventoryCategoryStats(**stats)
+            for stats in category_stats.values()
+        ]
+    )
+
+
+@app.get("/inventory/{item_id}", response_model=schemas.InventoryItem, tags=["Inventory"])
+def get_inventory_item(
+    item_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific inventory item by ID. Admin only."""
+    item = db.query(models.InventoryItem).filter(models.InventoryItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    return item
+
+
+@app.put("/inventory/{item_id}", response_model=schemas.InventoryItem, tags=["Inventory"])
+def update_inventory_item(
+    item_id: int,
+    item_update: schemas.InventoryItemUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update an inventory item. Admin only."""
+    db_item = db.query(models.InventoryItem).filter(models.InventoryItem.id == item_id).first()
+
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    update_data = item_update.model_dump(exclude_unset=True)
+
+    # Validate category if being updated
+    if "category" in update_data and update_data["category"] not in INVENTORY_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid category. Must be one of: {', '.join(INVENTORY_CATEGORIES)}"
+        )
+
+    # Track restocking
+    if "stock_quantity" in update_data:
+        new_qty = update_data["stock_quantity"]
+        if new_qty > db_item.stock_quantity:
+            db_item.last_restocked = datetime.utcnow()
+
+    for field, value in update_data.items():
+        setattr(db_item, field, value)
+
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
+@app.post("/inventory/{item_id}/adjust", response_model=schemas.InventoryItem, tags=["Inventory"])
+def adjust_inventory_stock(
+    item_id: int,
+    adjustment: schemas.InventoryStockAdjustment,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Adjust stock quantity for an inventory item. Admin only."""
+    db_item = db.query(models.InventoryItem).filter(models.InventoryItem.id == item_id).first()
+
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    new_quantity = db_item.stock_quantity + adjustment.quantity_change
+    if new_quantity < 0:
+        raise HTTPException(status_code=400, detail="Stock cannot go below zero")
+
+    db_item.stock_quantity = new_quantity
+    if adjustment.quantity_change > 0:
+        db_item.last_restocked = datetime.utcnow()
+
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
+@app.delete("/inventory/{item_id}", response_model=dict, tags=["Inventory"])
+def delete_inventory_item(
+    item_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Soft delete an inventory item. Admin only."""
+    db_item = db.query(models.InventoryItem).filter(models.InventoryItem.id == item_id).first()
+
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    db_item.is_active = False
+    db.commit()
+    return {"ok": True}
+
+
+# ============================================
+# Client Analytics Endpoints
+# ============================================
+
+@app.get("/admin/analytics/clients/no-show-risk", response_model=schemas.NoShowRiskReport, tags=["Analytics", "Admin"])
+def get_no_show_risk_report(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get no-show risk report for all clients. Admin only."""
+    clients = db.query(models.Client).all()
+
+    high_risk = []
+    medium_risk = []
+    total_no_shows = 0
+    total_appointments = 0
+
+    for client in clients:
+        # Get analytics for this client
+        analytics = db.query(models.ClientAnalytics).filter(
+            models.ClientAnalytics.client_id == client.id
+        ).first()
+
+        # Count appointments
+        bookings = db.query(models.Booking).filter(
+            models.Booking.client_id == client.id
+        ).all()
+
+        completed = sum(1 for b in bookings if b.status == "completed")
+        cancelled = sum(1 for b in bookings if b.status == "cancelled")
+        no_shows = sum(1 for b in bookings if b.status == "no_show")
+        total = len(bookings)
+
+        total_appointments += total
+        total_no_shows += no_shows
+
+        # Calculate rates
+        no_show_rate = (no_shows / total) if total > 0 else 0
+        cancellation_rate = (cancelled / total) if total > 0 else 0
+        completion_rate = (completed / total) if total > 0 else 0
+
+        # Determine risk level
+        if no_show_rate >= 0.3 or (no_show_rate >= 0.2 and cancellation_rate >= 0.3):
+            risk_level = "high"
+        elif no_show_rate >= 0.15 or cancellation_rate >= 0.4:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+
+        pets_count = db.query(models.Pet).filter(models.Pet.client_id == client.id).count()
+
+        client_data = schemas.ClientWithAnalytics(
+            id=client.id,
+            name=client.name,
+            email=client.email,
+            pets_count=pets_count,
+            analytics=schemas.ClientAnalytics(
+                id=analytics.id if analytics else 0,
+                client_id=client.id,
+                total_appointments=total,
+                completed_appointments=completed,
+                cancelled_appointments=cancelled,
+                no_show_count=no_shows,
+                no_show_rate=round(no_show_rate, 3),
+                cancellation_rate=round(cancellation_rate, 3),
+                completion_rate=round(completion_rate, 3),
+                risk_level=risk_level
+            ) if total > 0 else None
+        )
+
+        if risk_level == "high":
+            high_risk.append(client_data)
+        elif risk_level == "medium":
+            medium_risk.append(client_data)
+
+    overall_no_show_rate = (total_no_shows / total_appointments) if total_appointments > 0 else 0
+
+    return schemas.NoShowRiskReport(
+        high_risk_clients=sorted(high_risk, key=lambda x: x.analytics.no_show_rate if x.analytics else 0, reverse=True),
+        medium_risk_clients=sorted(medium_risk, key=lambda x: x.analytics.no_show_rate if x.analytics else 0, reverse=True),
+        total_high_risk=len(high_risk),
+        total_medium_risk=len(medium_risk),
+        overall_no_show_rate=round(overall_no_show_rate, 3)
+    )
+
+
+@app.get("/admin/analytics/clients/engagement", response_model=schemas.ClientEngagementStats, tags=["Analytics", "Admin"])
+def get_client_engagement_stats(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get client engagement statistics. Admin only."""
+    now = datetime.utcnow()
+    ninety_days_ago = now - timedelta(days=90)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    clients = db.query(models.Client).all()
+
+    active_clients = 0
+    inactive_clients = 0
+    new_clients_this_month = 0
+    returning_clients_this_month = 0
+    total_visits = 0
+    client_visit_data = []
+
+    for client in clients:
+        bookings = db.query(models.Booking).filter(
+            models.Booking.client_id == client.id,
+            models.Booking.status.in_(["completed", "confirmed"])
+        ).order_by(models.Booking.start_time.desc()).all()
+
+        visit_count = len(bookings)
+        total_visits += visit_count
+
+        # Check if active (visited in last 90 days)
+        last_visit = bookings[0].start_time if bookings else None
+        if last_visit and last_visit >= ninety_days_ago:
+            active_clients += 1
+        else:
+            inactive_clients += 1
+
+        # Check for first visit this month
+        first_booking = db.query(models.Booking).filter(
+            models.Booking.client_id == client.id
+        ).order_by(models.Booking.start_time.asc()).first()
+
+        if first_booking and first_booking.start_time >= month_start:
+            new_clients_this_month += 1
+        elif bookings and any(b.start_time >= month_start for b in bookings):
+            returning_clients_this_month += 1
+
+        pets_count = db.query(models.Pet).filter(models.Pet.client_id == client.id).count()
+
+        client_visit_data.append({
+            "client": client,
+            "visit_count": visit_count,
+            "pets_count": pets_count,
+            "last_visit": last_visit
+        })
+
+    # Calculate averages
+    total_clients = len(clients)
+    average_visits_per_client = (total_visits / total_clients) if total_clients > 0 else 0
+
+    # Get top clients by visit count
+    top_client_data = sorted(client_visit_data, key=lambda x: x["visit_count"], reverse=True)[:10]
+    top_clients = [
+        schemas.ClientWithAnalytics(
+            id=data["client"].id,
+            name=data["client"].name,
+            email=data["client"].email,
+            pets_count=data["pets_count"],
+            analytics=schemas.ClientAnalytics(
+                id=0,
+                client_id=data["client"].id,
+                total_appointments=data["visit_count"],
+                completed_appointments=data["visit_count"],
+                cancelled_appointments=0,
+                no_show_count=0,
+                last_visit_date=data["last_visit"]
+            ) if data["visit_count"] > 0 else None
+        )
+        for data in top_client_data
+    ]
+
+    return schemas.ClientEngagementStats(
+        active_clients=active_clients,
+        inactive_clients=inactive_clients,
+        new_clients_this_month=new_clients_this_month,
+        returning_clients_this_month=returning_clients_this_month,
+        average_visits_per_client=round(average_visits_per_client, 2),
+        top_clients=top_clients
+    )
+
+
+@app.get("/admin/analytics/clients/{client_id}", tags=["Analytics", "Admin"])
+def get_client_analytics(
+    client_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get detailed analytics for a specific client. Admin only."""
+    client = db.query(models.Client).filter(models.Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    bookings = db.query(models.Booking).filter(
+        models.Booking.client_id == client_id
+    ).order_by(models.Booking.start_time.desc()).all()
+
+    completed = sum(1 for b in bookings if b.status == "completed")
+    cancelled = sum(1 for b in bookings if b.status == "cancelled")
+    no_shows = sum(1 for b in bookings if b.status == "no_show")
+    confirmed = sum(1 for b in bookings if b.status == "confirmed")
+    total = len(bookings)
+
+    pets = db.query(models.Pet).filter(models.Pet.client_id == client_id).all()
+
+    # Get booking history with details
+    booking_history = []
+    for booking in bookings[:20]:  # Last 20 bookings
+        pet = next((p for p in pets if p.id == booking.pet_id), None)
+        staff = db.query(models.Staff).filter(models.Staff.id == booking.staff_id).first()
+        booking_history.append({
+            "id": booking.id,
+            "date": booking.start_time.isoformat(),
+            "status": booking.status,
+            "pet_name": pet.name if pet else "Unknown",
+            "staff_name": staff.name if staff else "Unknown",
+            "reason": booking.complaint_reason
+        })
+
+    # Calculate rates
+    no_show_rate = (no_shows / total) if total > 0 else 0
+    cancellation_rate = (cancelled / total) if total > 0 else 0
+    completion_rate = (completed / total) if total > 0 else 0
+
+    # Determine risk level
+    if no_show_rate >= 0.3 or (no_show_rate >= 0.2 and cancellation_rate >= 0.3):
+        risk_level = "high"
+    elif no_show_rate >= 0.15 or cancellation_rate >= 0.4:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+
+    return {
+        "client": {
+            "id": client.id,
+            "name": client.name,
+            "email": client.email
+        },
+        "pets": [{"id": p.id, "name": p.name, "species": p.species, "breed": p.breed} for p in pets],
+        "statistics": {
+            "total_appointments": total,
+            "completed": completed,
+            "cancelled": cancelled,
+            "no_shows": no_shows,
+            "upcoming": confirmed,
+            "no_show_rate": round(no_show_rate * 100, 1),
+            "cancellation_rate": round(cancellation_rate * 100, 1),
+            "completion_rate": round(completion_rate * 100, 1),
+            "risk_level": risk_level
+        },
+        "recent_bookings": booking_history,
+        "first_visit": bookings[-1].start_time.isoformat() if bookings else None,
+        "last_visit": bookings[0].start_time.isoformat() if bookings else None
+    }
+
+
+@app.put("/bookings/{booking_id}/mark-no-show", response_model=schemas.Booking, tags=["Bookings", "Admin"])
+def mark_booking_no_show(
+    booking_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a booking as no-show. Admin only."""
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Cannot mark cancelled booking as no-show")
+
+    booking.status = "no_show"
+    db.commit()
+    db.refresh(booking)
+
+    # Update client analytics if exists
+    analytics = db.query(models.ClientAnalytics).filter(
+        models.ClientAnalytics.client_id == booking.client_id
+    ).first()
+
+    if analytics:
+        analytics.no_show_count += 1
+        db.commit()
+
+    return booking
+
+
+# ============================================
+# Service & Pricing Endpoints
+# ============================================
+
+SERVICE_CATEGORIES = ["checkup", "vaccination", "surgery", "dental", "grooming", "emergency", "diagnostic", "wellness"]
+
+@app.post("/services", response_model=schemas.Service, tags=["Services"])
+def create_service(
+    service: schemas.ServiceCreate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new service. Admin only."""
+    db_service = models.Service(**service.model_dump())
+    db.add(db_service)
+    db.commit()
+    db.refresh(db_service)
+    return db_service
+
+
+@app.get("/services", response_model=List[schemas.Service], tags=["Services"])
+def get_services(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    active_only: bool = Query(True, description="Only show active services"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all services. Admin only."""
+    query = db.query(models.Service)
+    if active_only:
+        query = query.filter(models.Service.is_active == True)
+    if category:
+        query = query.filter(models.Service.category == category)
+    return query.order_by(models.Service.category, models.Service.name).all()
+
+
+@app.get("/services/{service_id}", response_model=schemas.Service, tags=["Services"])
+def get_service(
+    service_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific service. Admin only."""
+    service = db.query(models.Service).filter(models.Service.id == service_id).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    return service
+
+
+@app.put("/services/{service_id}", response_model=schemas.Service, tags=["Services"])
+def update_service(
+    service_id: int,
+    service_update: schemas.ServiceUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update a service. Admin only."""
+    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
+    if not db_service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    update_data = service_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_service, field, value)
+
+    db.commit()
+    db.refresh(db_service)
+    return db_service
+
+
+@app.delete("/services/{service_id}", response_model=dict, tags=["Services"])
+def delete_service(
+    service_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Soft delete a service. Admin only."""
+    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
+    if not db_service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    db_service.is_active = False
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/admin/analytics/revenue", response_model=schemas.RevenueStats, tags=["Analytics", "Admin"])
+def get_revenue_stats(
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get revenue statistics. Admin only."""
+    now = datetime.utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if now.month == 1:
+        last_month_start = month_start.replace(year=now.year - 1, month=12)
+    else:
+        last_month_start = month_start.replace(month=now.month - 1)
+
+    # Get all bookings with prices
+    bookings = db.query(models.Booking).filter(
+        models.Booking.price.isnot(None),
+        models.Booking.status.in_(["completed", "confirmed"])
+    ).all()
+
+    total_revenue = sum(b.price or 0 for b in bookings)
+    revenue_this_month = sum(b.price or 0 for b in bookings if b.start_time >= month_start)
+    revenue_last_month = sum(
+        b.price or 0 for b in bookings
+        if b.start_time >= last_month_start and b.start_time < month_start
+    )
+
+    bookings_with_price = [b for b in bookings if b.price]
+    average_booking_value = (total_revenue // len(bookings_with_price)) if bookings_with_price else 0
+
+    # Top services by revenue
+    service_revenue = {}
+    for booking in bookings:
+        if booking.service_id and booking.price:
+            service = db.query(models.Service).filter(models.Service.id == booking.service_id).first()
+            if service:
+                if service.name not in service_revenue:
+                    service_revenue[service.name] = {"name": service.name, "revenue": 0, "count": 0}
+                service_revenue[service.name]["revenue"] += booking.price
+                service_revenue[service.name]["count"] += 1
+
+    top_services = sorted(service_revenue.values(), key=lambda x: x["revenue"], reverse=True)[:5]
+
+    # Revenue by category
+    category_revenue = {}
+    for booking in bookings:
+        if booking.service_id and booking.price:
+            service = db.query(models.Service).filter(models.Service.id == booking.service_id).first()
+            if service and service.category:
+                category_revenue[service.category] = category_revenue.get(service.category, 0) + booking.price
+
+    return schemas.RevenueStats(
+        total_revenue=total_revenue,
+        revenue_this_month=revenue_this_month,
+        revenue_last_month=revenue_last_month,
+        average_booking_value=average_booking_value,
+        top_services=top_services,
+        revenue_by_category=category_revenue
+    )
+
+
+# ============================================
+# Email Campaign Endpoints
+# ============================================
+
+import os
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+SENDGRID_FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL", "noreply@interpaws.com")
+
+
+@app.post("/email/campaigns", response_model=schemas.EmailCampaign, tags=["Email"])
+def create_email_campaign(
+    campaign: schemas.EmailCampaignCreate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new email campaign. Admin only."""
+    db_campaign = models.EmailCampaign(
+        **campaign.model_dump(),
+        created_by=current_admin.id,
+        created_at=datetime.utcnow(),
+        status="draft"
+    )
+    db.add(db_campaign)
+    db.commit()
+    db.refresh(db_campaign)
+    return db_campaign
+
+
+@app.get("/email/campaigns", response_model=List[schemas.EmailCampaign], tags=["Email"])
+def get_email_campaigns(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all email campaigns. Admin only."""
+    query = db.query(models.EmailCampaign)
+    if status:
+        query = query.filter(models.EmailCampaign.status == status)
+    return query.order_by(desc(models.EmailCampaign.created_at)).all()
+
+
+@app.get("/email/campaigns/{campaign_id}", response_model=schemas.EmailCampaign, tags=["Email"])
+def get_email_campaign(
+    campaign_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific email campaign. Admin only."""
+    campaign = db.query(models.EmailCampaign).filter(models.EmailCampaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return campaign
+
+
+@app.put("/email/campaigns/{campaign_id}", response_model=schemas.EmailCampaign, tags=["Email"])
+def update_email_campaign(
+    campaign_id: int,
+    campaign_update: schemas.EmailCampaignUpdate,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update an email campaign. Admin only."""
+    db_campaign = db.query(models.EmailCampaign).filter(models.EmailCampaign.id == campaign_id).first()
+    if not db_campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    update_data = campaign_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_campaign, field, value)
+
+    db.commit()
+    db.refresh(db_campaign)
+    return db_campaign
+
+
+@app.delete("/email/campaigns/{campaign_id}", response_model=dict, tags=["Email"])
+def delete_email_campaign(
+    campaign_id: int,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete an email campaign. Admin only."""
+    db_campaign = db.query(models.EmailCampaign).filter(models.EmailCampaign.id == campaign_id).first()
+    if not db_campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    db.delete(db_campaign)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/email/generate", response_model=schemas.EmailGenerateResponse, tags=["Email", "AI"])
+async def generate_email_content(
+    request: schemas.EmailGenerateRequest,
+    current_admin: models.Staff = Depends(get_current_admin_user)
+):
+    """Generate email content using AI. Admin only."""
+    campaign_prompts = {
+        "reminder": "appointment reminder for an upcoming vet visit",
+        "promotion": "promotional offer for clinic services",
+        "follow_up": "follow-up after a recent visit to check on pet health",
+        "vaccination_due": "reminder that vaccinations are due soon",
+        "checkup_reminder": "annual or semi-annual wellness checkup reminder"
+    }
+
+    campaign_desc = campaign_prompts.get(request.campaign_type, "general veterinary clinic communication")
+
+    prompt = f"""Generate a {request.tone} email for a veterinary clinic.
+
+Purpose: {campaign_desc}
+
+Additional context: {request.context or 'None provided'}
+Client name: {request.client_name or '[Client Name]'}
+Pet name: {request.pet_name or '[Pet Name]'}
+
+Generate a professional email with:
+1. A compelling subject line
+2. A friendly opening
+3. The main message
+4. A clear call to action
+5. A warm closing
+
+Respond in JSON format:
+{{"subject": "subject line here", "body": "full email body here"}}
+
+Use placeholders like [Client Name], [Pet Name], [Date], [Time] where specific info is needed.
+Keep the email concise and friendly. Include the clinic name "Interpaws Veterinary Clinic" in the signature."""
+
+    try:
+        llm_response = await get_ollama_recommendation(prompt)
+        result = _extract_json_payload(llm_response)
+        if result and "subject" in result and "body" in result:
+            return schemas.EmailGenerateResponse(
+                subject=result["subject"],
+                body=result["body"]
+            )
+    except Exception as e:
+        print(f"Error generating email: {e}")
+
+    # Fallback templates
+    templates = {
+        "reminder": {
+            "subject": "Reminder: Upcoming Appointment at Interpaws",
+            "body": f"""Dear {request.client_name or '[Client Name]'},
+
+This is a friendly reminder about your upcoming appointment for {request.pet_name or '[Pet Name]'} at Interpaws Veterinary Clinic.
+
+Please arrive 10 minutes early to complete any necessary paperwork. If you need to reschedule, please contact us at least 24 hours in advance.
+
+We look forward to seeing you and {request.pet_name or '[Pet Name]'} soon!
+
+Best regards,
+The Interpaws Team"""
+        },
+        "vaccination_due": {
+            "subject": f"Vaccination Due for {request.pet_name or 'Your Pet'}",
+            "body": f"""Dear {request.client_name or '[Client Name]'},
+
+Our records indicate that {request.pet_name or '[Pet Name]'}'s vaccinations are coming due. Keeping vaccines up to date is essential for your pet's health and well-being.
+
+Please schedule an appointment at your earliest convenience to ensure {request.pet_name or '[Pet Name]'} stays protected.
+
+To book online or call us at (555) 123-4567.
+
+Warm regards,
+The Interpaws Veterinary Team"""
+        }
+    }
+
+    template = templates.get(request.campaign_type, {
+        "subject": "A Message from Interpaws Veterinary Clinic",
+        "body": f"""Dear {request.client_name or '[Client Name]'},
+
+Thank you for choosing Interpaws Veterinary Clinic for {request.pet_name or '[Pet Name]'}'s care.
+
+{request.context or 'We wanted to reach out to ensure your pet is healthy and happy.'}
+
+Please don't hesitate to contact us if you have any questions.
+
+Best regards,
+The Interpaws Team"""
+    })
+
+    return schemas.EmailGenerateResponse(**template)
+
+
+@app.post("/email/send", response_model=schemas.SendEmailResponse, tags=["Email"])
+async def send_email(
+    request: schemas.SendEmailRequest,
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Send an email via SendGrid. Admin only."""
+    if not SENDGRID_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="SendGrid is not configured. Please set SENDGRID_API_KEY in environment variables."
+        )
+
+    # Create email send record
+    db_send = models.EmailSend(
+        campaign_id=request.campaign_id,
+        client_id=request.client_id,
+        email_address=request.to_email,
+        status="pending"
+    )
+    db.add(db_send)
+    db.commit()
+    db.refresh(db_send)
+
+    try:
+        message = Mail(
+            from_email=SENDGRID_FROM_EMAIL,
+            to_emails=request.to_email,
+            subject=request.subject,
+            html_content=request.body.replace('\n', '<br>')
+        )
+
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+
+        if response.status_code in [200, 201, 202]:
+            db_send.status = "sent"
+            db_send.sent_at = datetime.utcnow()
+            db.commit()
+
+            return schemas.SendEmailResponse(
+                success=True,
+                message=f"Email sent successfully to {request.to_email}",
+                email_send_id=db_send.id
+            )
+        else:
+            db_send.status = "failed"
+            db.commit()
+            raise HTTPException(status_code=500, detail=f"SendGrid error: {response.status_code}")
+
+    except Exception as e:
+        db_send.status = "failed"
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+@app.post("/email/send-test", response_model=schemas.SendEmailResponse, tags=["Email"])
+async def send_test_email(
+    to_email: str = Query(..., description="Email address to send test to"),
+    campaign_id: int = Query(..., description="Campaign ID to test"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Send a test email for a campaign. Admin only."""
+    campaign = db.query(models.EmailCampaign).filter(models.EmailCampaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    return await send_email(
+        schemas.SendEmailRequest(
+            to_email=to_email,
+            subject=f"[TEST] {campaign.subject}",
+            body=campaign.body,
+            campaign_id=campaign.id
+        ),
+        current_admin=current_admin,
+        db=db
+    )
+
+
+@app.get("/email/sends", response_model=List[schemas.EmailSend], tags=["Email"])
+def get_email_sends(
+    campaign_id: Optional[int] = Query(None, description="Filter by campaign"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    current_admin: models.Staff = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get email send history. Admin only."""
+    query = db.query(models.EmailSend)
+    if campaign_id:
+        query = query.filter(models.EmailSend.campaign_id == campaign_id)
+    if status:
+        query = query.filter(models.EmailSend.status == status)
+    return query.order_by(desc(models.EmailSend.sent_at)).limit(100).all()

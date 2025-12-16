@@ -1,359 +1,641 @@
-"""Hybrid Agent Core for Interpaws - BOOKING CAPABLE and AWAIT FIXED"""
-from __future__ import annotations
-import json
-from typing import Any, Dict, List, Optional
-from collections import defaultdict
-from app.ai_services import extract_json_payload, get_ollama_recommendation
-from .tools import AgentTools
-from app import models
-from datetime import datetime # Import datetime for target time logic
+"""
+Interpaws Client Agent - Agentic Architecture with Gemini Function Calling
 
-# Keep track of chat history
-CONVERSATION_MEMORY: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+Gemini is the brain. It decides what to do based on conversation context.
+Tools are available for Gemini to call when needed.
+"""
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+from google.genai import types
+from sqlalchemy.orm import Session
+
+from app import models
+from app.ai_services import agentic_chat, AgenticResponse
+from app.booking_logic import check_availability
+from app.service_catalog import get_service_duration_minutes, infer_service_type
+from .tools import AgentTools
+
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# SYSTEM PROMPT - Gives Gemini full context and personality
+# =============================================================================
+
+CLIENT_SYSTEM_PROMPT = """You are Ivy, a warm and knowledgeable veterinary assistant at Interpaws Veterinary Clinic.
+
+## YOUR PERSONALITY
+- Warm and empathetic - you genuinely care about pets and their owners
+- Professional but approachable - like a helpful friend at a vet clinic
+- Concise - keep responses to 2-4 sentences unless more detail is needed
+- Natural - use contractions, be conversational, not robotic
+
+## YOUR CAPABILITIES
+You have tools to help clients:
+- Look up their pets and information
+- Find available appointment slots
+- Book, cancel, or reschedule appointments
+- Provide health advice using your veterinary knowledge
+
+## EMERGENCY PROTOCOL
+For TRUE EMERGENCIES (seizures, difficulty breathing, poisoning, severe bleeding, collapse, trauma):
+- DO NOT try to book an appointment
+- Immediately direct them to emergency veterinary care
+- Say something like: "This sounds like an emergency. Please take [pet name] to the nearest emergency vet clinic immediately. Call ahead if possible."
+
+## CONVERSATION FLOW
+1. If a client mentions a health concern, use your knowledge to provide helpful advice
+2. If they want to book, ask for pet name if you don't have it
+3. Use the tools to find slots and book appointments
+4. Be proactive about suggesting appointments for concerning symptoms
+5. Remember context from earlier in the conversation
+
+## BOOKING GUIDELINES
+- When showing available slots, present 2-3 good options
+- Use the pet's name naturally
+- Confirm bookings clearly with date, time, and what it's for
+- If a requested time isn't available, offer alternatives
+
+## HEALTH ADVICE GUIDELINES
+- You can share what symptoms might indicate and home care tips
+- Don't diagnose - recommend seeing a vet for diagnosis
+- If symptoms are concerning or persistent, recommend booking an appointment
+- It's okay to say "I'm not sure" and recommend an appointment
+
+Today's date and time: {current_datetime}
+"""
+
+# =============================================================================
+# TOOL DEFINITIONS FOR GEMINI
+# =============================================================================
+
+def get_client_tools() -> List[types.Tool]:
+    """Define the tools available to the client agent."""
+    return [
+        types.Tool(function_declarations=[
+            types.FunctionDeclaration(
+                name="get_pet_info",
+                description="Look up a pet's information including species, breed, age, and owner details. Use this when you need to find information about a client's pet.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "pet_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="The name of the pet to look up"
+                        ),
+                        "owner_email": types.Schema(
+                            type=types.Type.STRING,
+                            description="The owner's email address (optional, helps narrow search)"
+                        )
+                    },
+                    required=["pet_name"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="find_available_slots",
+                description="Find available appointment slots for a pet's health concern. Returns a list of available times with the recommended veterinarian.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "complaint": types.Schema(
+                            type=types.Type.STRING,
+                            description="The health concern or reason for the visit (e.g., 'limping', 'not eating', 'annual checkup')"
+                        ),
+                        "time_preference": types.Schema(
+                            type=types.Type.STRING,
+                            description="Optional time preference: 'morning', 'afternoon', 'evening', or 'weekend'"
+                        )
+                    },
+                    required=["complaint"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="book_appointment",
+                description="Book a confirmed appointment for a pet. Use this after the client has selected a time slot.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "pet_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet"
+                        ),
+                        "owner_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet owner"
+                        ),
+                        "complaint": types.Schema(
+                            type=types.Type.STRING,
+                            description="Reason for the visit"
+                        ),
+                        "appointment_time": types.Schema(
+                            type=types.Type.STRING,
+                            description="The appointment time in format 'YYYY-MM-DD HH:MM'"
+                        )
+                    },
+                    required=["pet_name", "owner_name", "complaint", "appointment_time"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="cancel_appointment",
+                description="Cancel an upcoming appointment for a pet.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "pet_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet"
+                        ),
+                        "owner_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet owner"
+                        )
+                    },
+                    required=["pet_name", "owner_name"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="reschedule_appointment",
+                description="Reschedule an existing appointment to a new time.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "pet_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet"
+                        ),
+                        "owner_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet owner"
+                        ),
+                        "new_time": types.Schema(
+                            type=types.Type.STRING,
+                            description="The new appointment time in format 'YYYY-MM-DD HH:MM'"
+                        )
+                    },
+                    required=["pet_name", "owner_name", "new_time"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="get_upcoming_appointments",
+                description="Get upcoming appointments for a pet or owner.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "pet_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the pet (optional)"
+                        ),
+                        "owner_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the owner (optional)"
+                        )
+                    }
+                )
+            ),
+            types.FunctionDeclaration(
+                name="get_my_pets",
+                description="Get all pets registered to the current client. Use this when the client asks 'what pets do I have?' or 'show me my pets'.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={}
+                )
+            ),
+            types.FunctionDeclaration(
+                name="get_clinic_info",
+                description="Get clinic information including hours, services, and contact details. Use when clients ask about hours, location, or what services are offered.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={}
+                )
+            ),
+        ])
+    ]
+
+
+# =============================================================================
+# CLIENT AGENT CLASS
+# =============================================================================
 
 class InterpawsAgent:
-    def __init__(self, db_session):
-        self.tools = AgentTools(db_session)
+    """Agentic veterinary assistant powered by Gemini function calling."""
+
+    def __init__(self, db_session: Session, client_email: Optional[str] = None):
         self.db = db_session
+        self.tools = AgentTools(db_session)
+        self.client_email = client_email
+        self._owner_name: Optional[str] = None
+
+        # Look up client name if email provided
+        if client_email:
+            client = self.db.query(models.Client).filter(
+                models.Client.email == client_email
+            ).first()
+            if client:
+                self._owner_name = client.name
 
     async def chat(
         self,
         user_message: str,
-        context: str = "",
         session_id: Optional[str] = None,
+        # Legacy params for compatibility
+        context: str = "",
         prior_history: Optional[List[Dict[str, str]]] = None,
         client_email: Optional[str] = None,
-        *,
         complaint_text: Optional[str] = None,
         pet_name: Optional[str] = None,
-        owner_name: Optional[str] = None
+        owner_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        
-        # Get current time for the LLM to resolve "tomorrow" or "sunday"
-        now_str = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
-
-        # Step 1: Store user message in conversation memory
-        if session_id:
-            CONVERSATION_MEMORY[session_id].append({
-                "role": "user",
-                "content": user_message
-            })
-
-        # Step 2: Retrieve conversation history (last 3 turns = 6 messages)
-        history_text = ""
-        if session_id and CONVERSATION_MEMORY[session_id]:
-            recent_messages = CONVERSATION_MEMORY[session_id][-6:]  # Last 6 messages
-            history_lines = []
-            for msg in recent_messages:
-                role_label = "User" if msg["role"] == "user" else "Agent"
-                history_lines.append(f"{role_label}: {msg['content']}")
-            history_text = "\n".join(history_lines)
-
-        # 1. UNDERSTAND: Extract Pet, Complaint, AND Booking Intent
-        # Build history section for the prompt
-        history_section = ""
-        if history_text:
-            history_section = f"""
-        RECENT CONVERSATION HISTORY:
-        {history_text}
         """
+        Main chat handler - Gemini decides what to do.
 
-        extraction_prompt = f"""
-        You are an AI Veterinary Assistant. Your goal is to triage the pet's condition safely.
-        Current Date/Time: {now_str}
-
-        IMPORTANT: Use the Conversation History to interpret the User Message. If the user answers a previous question (e.g., 'Yes', 'Afternoons', 'I like mornings'), apply it to the current context instead of treating it as a new complaint. For example:
-        - If the Agent asked "Do you prefer mornings or afternoons?" and User says "Afternoons", extract time_preference="afternoons"
-        - If the Agent asked "Would you like to see the calendar?" and User says "Yes", set request_calendar=true
-        - If the Agent asked about a specific day and User confirms, extract the appropriate target_time
-        {history_section}
-        Context: Pet="{pet_name or 'Unknown'}", Complaint="{complaint_text or 'Unknown'}"
-
-        User Message: "{user_message}"
-
-        Task: Extract medical details. Extract 'pet_species' and 'pet_breed' if mentioned. Infer species from breed (e.g. 'Lab' -> 'Dog', 'Siamese' -> 'Cat'). If the complaint is dangerous (e.g. breathing issues, seizures, bleeding, eating objects), mark 'is_emergency' as true.
-        - pet_name: Name of the pet (if mentioned).
-        - complaint: Medical issue (if mentioned).
-        - target_time: If the user is CONFIRMING/BOOKING a specific slot they chose (e.g. "Book that 2pm slot", "Let's do Tuesday at 3pm"), convert it to 'YYYY-MM-DD HH:MM' format. If no specific time is being BOOKED, use null.
-        - check_specific_time: If the user is ASKING about a specific time's availability (e.g. "Do you have 1pm?", "Is 2pm available?", "anything at 3pm?"), extract that time in 'HH:MM' format. Otherwise null.
-        - time_preference: Extract general constraints like 'mornings' (before 12pm), 'afternoons' (12-5pm), 'evenings' (after 5pm), 'weekends'. If none, use null.
-        - request_calendar: True if user explicitly asks to see the calendar, schedule, or availability (e.g. "show me the calendar", "what's available", "let me see the schedule"), OR if User says "Yes" in response to Agent asking about showing the calendar. Otherwise false.
-        - is_question: True if the user is asking for advice, recommendations, or information (e.g., "What should I do?", "Do you recommend any treatment?", "Should I be worried?", "How do I care for my pet?"). False if they're trying to book an appointment.
-
-        Return JSON ONLY:
-        {{
-            "pet_name": "...",
-            "pet_species": "...",
-            "pet_breed": "...",
-            "complaint": "...",
-            "is_emergency": true or false,
-            "target_time": "2025-11-XX 09:00" or null,
-            "check_specific_time": "13:00" or null,
-            "time_preference": "mornings" or null,
-            "request_calendar": true or false,
-            "is_question": true or false
-        }}
+        Returns dict with at minimum:
+        - response: str (required for frontend)
+        - slots: list (optional, for appointment selection)
+        - service_type: str (optional)
+        - pet_name: str (optional)
         """
-        
-        raw_response = await get_ollama_recommendation(extraction_prompt, json_mode=True)
-        data = extract_json_payload(raw_response) or {}
-        
-        # 2. UPDATE STATE
-        current_pet = data.get("pet_name") or pet_name
-        current_complaint = data.get("complaint") or complaint_text
-        target_time = data.get("target_time")
-        check_specific_time = data.get("check_specific_time")
-        current_species = data.get("pet_species")
-        current_breed = data.get("pet_breed")
-        is_emergency = data.get("is_emergency")
-        time_preference = data.get("time_preference")
-        request_calendar = data.get("request_calendar", False)
-        is_question = data.get("is_question", False)
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = f"client_{uuid.uuid4().hex[:8]}"
 
-        # 3. LOGIC FLOW (The "Railroad")
+        # Use owner name from lookup or parameter
+        effective_owner = owner_name or self._owner_name or "Client"
 
-        # Emergency Guard Rail - Check immediately after extraction
-        if is_emergency:
-            response_payload = {
-                "response": "⚠️ This sounds like a medical emergency. Please do not wait for an appointment. Take your pet to the nearest emergency veterinary clinic immediately.",
-                "is_emergency": True,
-                "pet_name": current_pet,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
-            # Store agent response in memory
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": response_payload["response"]
-                })
-            return response_payload
+        # Build system prompt with current datetime
+        current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+        system_prompt = CLIENT_SYSTEM_PROMPT.format(current_datetime=current_datetime)
 
-        # Step A: Missing Pet Name
-        if not current_pet:
-            response_payload = {
-                "response": "I can help! First, what is your pet's name?",
-                "pet_name": None,
-                "owner_name": owner_name,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
-            # Store agent response in memory
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": response_payload["response"]
-                })
-            return response_payload
+        # Add owner context if known
+        if effective_owner and effective_owner != "Client":
+            system_prompt += f"\n\nThe current client is: {effective_owner}"
+        if pet_name:
+            system_prompt += f"\nThey are asking about their pet: {pet_name}"
+        if complaint_text:
+            system_prompt += f"\nCurrent concern: {complaint_text}"
 
-        # Step B: Missing Complaint
-        if not current_complaint:
-            response_payload = {
-                "response": f"Got it, we're checking for {current_pet}. What seems to be the problem?",
-                "pet_name": current_pet,
-                "owner_name": owner_name,
-                "pet_species": current_species,
-                "pet_breed": current_breed
-            }
-            # Store agent response in memory
-            if session_id:
-                CONVERSATION_MEMORY[session_id].append({
-                    "role": "agent",
-                    "content": response_payload["response"]
-                })
-            return response_payload
+        # Run the agentic chat loop
+        response = await agentic_chat(
+            user_message=user_message,
+            session_id=session_id,
+            system_prompt=system_prompt,
+            tools=get_client_tools(),
+            tool_executor=lambda name, args: self._execute_tool(name, args, effective_owner),
+        )
 
-        # Step B.5: Handle Questions/Advice Requests
-        # BUT: Check if we've been giving advice repeatedly and the issue persists
-        if is_question and current_pet and current_complaint:
-            # Check conversation history for repeated advice giving
-            advice_count = 0
-            if session_id and CONVERSATION_MEMORY[session_id]:
-                for msg in CONVERSATION_MEMORY[session_id]:
-                    if msg["role"] == "agent" and any(keyword in msg["content"].lower() for keyword in ["try", "recommend", "make sure", "keep", "watch"]):
-                        advice_count += 1
+        # Build response dict for frontend compatibility
+        result = {
+            "response": response.text,
+            "session_id": session_id,
+        }
 
-            # Check if user is expressing persistence/concern ("still", "ongoing", "keeps", "continues")
-            is_persistent = any(word in user_message.lower() for word in ["still", "ongoing", "keeps", "continues", "not working", "persists", "hasn't stopped", "won't stop", "quite a lot", "getting worse"])
+        # Add any slot data from tool results
+        if "find_available_slots" in response.tool_results:
+            slot_data = response.tool_results["find_available_slots"]
+            if isinstance(slot_data, dict):
+                result["slots"] = slot_data.get("slots", [])
+                result["service_type"] = slot_data.get("service_type")
+                result["pet_name"] = slot_data.get("pet_name", pet_name)
 
-            # Check if user is expressing worry or concern
-            is_worried = any(word in user_message.lower() for word in ["worried", "concerned", "scared", "afraid", "serious", "bad", "emergency"])
+        # Add booking confirmation data
+        if "book_appointment" in response.tool_results:
+            booking_data = response.tool_results["book_appointment"]
+            if isinstance(booking_data, dict):
+                result["booking_confirmed"] = booking_data.get("status") == "success"
+                result["service_type"] = booking_data.get("service_type")
 
-            # If we've given advice 1+ time OR user expresses persistence OR user is worried, transition to booking
-            if advice_count >= 1 or is_persistent or is_worried:
-                # Skip to booking flow - don't return here, let it fall through to Step D
-                pass
+        return result
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        owner_name: str
+    ) -> Dict[str, Any]:
+        """Execute a tool and return the result."""
+        try:
+            if tool_name == "get_pet_info":
+                return await self._tool_get_pet_info(
+                    args.get("pet_name", ""),
+                    args.get("owner_email")
+                )
+
+            elif tool_name == "find_available_slots":
+                return await self._tool_find_slots(
+                    args.get("complaint", "general checkup"),
+                    args.get("time_preference"),
+                    owner_name
+                )
+
+            elif tool_name == "book_appointment":
+                return await self.tools.manage_booking(
+                    pet_name=args.get("pet_name", ""),
+                    owner_name=args.get("owner_name", owner_name),
+                    complaint_description=args.get("complaint", ""),
+                    preferred_time=args.get("appointment_time")
+                )
+
+            elif tool_name == "cancel_appointment":
+                return await self.tools.cancel_booking(
+                    owner_name=args.get("owner_name", owner_name),
+                    pet_name=args.get("pet_name", "")
+                )
+
+            elif tool_name == "reschedule_appointment":
+                return await self.tools.reschedule_booking(
+                    owner_name=args.get("owner_name", owner_name),
+                    pet_name=args.get("pet_name", ""),
+                    new_time_str=args.get("new_time", "")
+                )
+
+            elif tool_name == "get_upcoming_appointments":
+                return await self._tool_get_appointments(
+                    args.get("pet_name"),
+                    args.get("owner_name", owner_name)
+                )
+
+            elif tool_name == "get_my_pets":
+                return await self._tool_get_my_pets(owner_name)
+
+            elif tool_name == "get_clinic_info":
+                return self._tool_get_clinic_info()
+
             else:
-                # Give advice one more time
-                advice_prompt = f"""
-                You are a helpful veterinary assistant. The pet owner is asking for advice about their pet.
+                return {"error": f"Unknown tool: {tool_name}"}
 
-                Pet: {current_pet}
-                Issue: {current_complaint}
-                Owner's Question: {user_message}
+        except Exception as e:
+            logger.error(f"Tool execution error for {tool_name}: {e}")
+            return {"error": str(e)}
 
-                Provide brief, helpful advice (2-3 sentences). If it's a serious issue or if this is a persistent problem, end by saying: "If the issue persists, I recommend scheduling an appointment with our veterinarian."
-                Keep it friendly and reassuring.
-                """
-                advice_response = await get_ollama_recommendation(advice_prompt)
+    async def _tool_get_pet_info(
+        self,
+        pet_name: str,
+        owner_email: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Look up pet information."""
+        query = self.db.query(models.Pet).filter(
+            models.Pet.name.ilike(f"%{pet_name}%")
+        )
 
-                response_payload = {
-                    "response": advice_response,
-                    "pet_name": current_pet,
-                    "complaint_text": current_complaint,
-                    "pet_species": current_species,
-                    "pet_breed": current_breed
-                }
-
-                if session_id:
-                    CONVERSATION_MEMORY[session_id].append({
-                        "role": "agent",
-                        "content": advice_response
-                    })
-
-                return response_payload
-
-        # Step C: BOOKING - If we have a time, BOOK IT.
-        if target_time:
-            # FIX: Added 'await' here to solve the "cannot unpack non-iterable coroutine object" error
-            booking_result = await self.tools.manage_booking( 
-                pet_name=current_pet,
-                owner_name=owner_name or "Client", 
-                complaint_description=current_complaint,
-                preferred_time=target_time
+        if owner_email:
+            query = query.join(models.Client).filter(
+                models.Client.email == owner_email
             )
-            
-            if booking_result.get("status") == "success":
-                response_payload = {
-                    "response": booking_result["message"],
-                    "service_type": booking_result.get("service_type"),
-                    "pet_name": current_pet,
-                    "complaint_text": current_complaint,
-                    "pet_species": current_species,
-                    "pet_breed": current_breed
-                }
-                # Store agent response in memory
-                if session_id:
-                    CONVERSATION_MEMORY[session_id].append({
-                        "role": "agent",
-                        "content": response_payload["response"]
-                    })
-                return response_payload
-            else:
-                error_msg = booking_result.get("message", "That slot isn't available.")
-                response_payload = {
-                    "response": f"{error_msg} Here are other available times:",
-                    "pet_name": current_pet,
-                    "complaint_text": current_complaint,
-                    "pet_species": current_species,
-                    "pet_breed": current_breed
-                }
-                # Store agent response in memory
-                if session_id:
-                    CONVERSATION_MEMORY[session_id].append({
-                        "role": "agent",
-                        "content": response_payload["response"]
-                    })
-                return response_payload
 
-        # Step D: Suggestion - Find Staff & Slots
-        staff_matches = await self.tools.find_staff(current_complaint)
-        if not staff_matches:
-             return {
-                 "response": "I couldn't find a specialist for that issue. Could you describe it differently?",
-                 "pet_name": current_pet,
-                 "complaint_text": current_complaint
-             }
+        pets = query.limit(5).all()
 
-        best_staff = staff_matches[0]
-        staff_obj = self.db.query(models.Staff).filter(models.Staff.id == best_staff['id']).first()
+        if not pets:
+            return {
+                "status": "not_found",
+                "message": f"No pet named '{pet_name}' found."
+            }
 
-        # 1. Generate a larger pool of slots so we have options to filter
-        all_slots = self.tools._generate_slots(staff=staff_obj, duration_minutes=30, max_slots=15)
+        results = []
+        for pet in pets:
+            owner = self.db.query(models.Client).filter(
+                models.Client.id == pet.client_id
+            ).first()
 
-        # 2. Apply AI-Driven Filtering (The "Control" Layer)
-        final_slots = []
-        response_intro = ""
+            age_str = "Unknown"
+            if pet.date_of_birth:
+                today = datetime.now().date()
+                if pet.date_of_birth <= today:
+                    age_delta = today - pet.date_of_birth
+                    years = age_delta.days // 365
+                    months = (age_delta.days % 365) // 30
+                    if years > 0:
+                        age_str = f"{years} year{'s' if years != 1 else ''}"
+                    else:
+                        age_str = f"{months} month{'s' if months != 1 else ''}"
 
-        # Check if this is a transition from advice to booking (persistent issue)
-        is_persistent_issue = any(word in user_message.lower() for word in ["still", "ongoing", "keeps", "continues", "not working", "persists", "hasn't stopped", "won't stop", "quite a lot", "getting worse"])
-
-        # 2a. Handle persistent issues first - prioritize getting them scheduled
-        if is_persistent_issue and not check_specific_time and not time_preference:
-            response_intro = f"I understand {current_pet}'s {current_complaint} is ongoing. Let's get you in to see our veterinarian. I recommend Dr. {best_staff['name']} ({best_staff['role']}). Here are their next available appointments:"
-            final_slots = all_slots[:3]
-
-        # 2b. Handle specific time checks (e.g., "Do you have 1pm?")
-        elif check_specific_time:
-            # Parse the requested time (format: "HH:MM" or "H:MM")
-            try:
-                requested_hour = int(check_specific_time.split(':')[0])
-                requested_minute = int(check_specific_time.split(':')[1]) if ':' in check_specific_time else 0
-
-                # Find exact or closest matches
-                exact_match = None
-                close_matches = []
-
-                for s in all_slots:
-                    if s['start_time'].hour == requested_hour and s['start_time'].minute == requested_minute:
-                        exact_match = s
-                        break
-                    # Also collect nearby times (within 1 hour)
-                    time_diff = abs((s['start_time'].hour * 60 + s['start_time'].minute) - (requested_hour * 60 + requested_minute))
-                    if time_diff <= 120:  # Within 2 hours
-                        close_matches.append(s)
-
-                if exact_match:
-                    response_intro = f"Yes! I have {check_specific_time} available with Dr. {best_staff['name']}. Would you like to book that time?"
-                    final_slots = [exact_match]
-                elif close_matches:
-                    response_intro = f"I don't have exactly {check_specific_time} available, but I have these nearby times with Dr. {best_staff['name']}:"
-                    final_slots = sorted(close_matches, key=lambda x: abs((x['start_time'].hour * 60 + x['start_time'].minute) - (requested_hour * 60 + requested_minute)))[:3]
-                else:
-                    response_intro = f"Unfortunately, I don't have {check_specific_time} or any nearby times available. Here are the next available slots with Dr. {best_staff['name']}:"
-                    final_slots = all_slots[:3]
-            except (ValueError, IndexError):
-                # If parsing fails, fall back to showing all slots
-                response_intro = f"Let me show you what's available with Dr. {best_staff['name']}:"
-                final_slots = all_slots[:3]
-
-        elif time_preference:
-            time_lower = time_preference.lower()
-            for s in all_slots:
-                h = s['start_time'].hour
-                if "morning" in time_lower and h < 12: final_slots.append(s)
-                elif "afternoon" in time_lower and 12 <= h < 17: final_slots.append(s)
-                elif "evening" in time_lower and h >= 17: final_slots.append(s)
-                elif "weekend" in time_lower and s['start_time'].weekday() >= 5: final_slots.append(s)
-
-            # Intelligent Fallback
-            if not final_slots:
-                response_intro = f"I checked for **{time_preference}** appointments with Dr. {best_staff['name']}, but those times are fully booked. Here are the closest alternatives:"
-                final_slots = all_slots[:3]
-            else:
-                response_intro = f"Got it! I found these **{time_preference}** openings with Dr. {best_staff['name']} ({best_staff['role']}):"
-                final_slots = final_slots[:3]
-        else:
-            # Standard Triage Response
-            species_context = f" ({current_breed} {current_species})" if current_species and current_breed else ""
-            response_intro = f"For {current_pet}{species_context} and the concern '{current_complaint}', I recommend Dr. {best_staff['name']} ({best_staff['role']}). Here are their next openings:"
-            final_slots = all_slots[:3]
-
-        # 3. Format and Return
-        slot_text = "\n".join([f"- {s['start_time'].strftime('%A, %b %d at %I:%M %p')}" for s in final_slots])
-
-        # Memory update for the agent's own context
-        response_msg = f"{response_intro}\n\n{slot_text}\n\nShall I book one of these?"
-
-        if session_id:
-            CONVERSATION_MEMORY[session_id].append({
-                "role": "agent",
-                "content": response_msg
+            results.append({
+                "name": pet.name,
+                "species": pet.species,
+                "breed": pet.breed,
+                "age": age_str,
+                "owner_name": owner.name if owner else "Unknown",
+                "owner_email": owner.email if owner else None
             })
 
         return {
-            "response": response_msg,
-            "slots": final_slots,
-            "pet_name": current_pet,
-            "complaint_text": current_complaint
+            "status": "success",
+            "pets": results,
+            "message": f"Found {len(results)} pet(s) named '{pet_name}'"
+        }
+
+    async def _tool_find_slots(
+        self,
+        complaint: str,
+        time_preference: Optional[str],
+        owner_name: str
+    ) -> Dict[str, Any]:
+        """Find available appointment slots."""
+        # Find best staff for this complaint
+        staff_matches = await self.tools.find_staff(complaint)
+        if isinstance(staff_matches, dict) and "error" in staff_matches:
+            return staff_matches
+        if not staff_matches:
+            return {"error": "No staff available for this type of appointment."}
+
+        best_staff = staff_matches[0]
+        staff = self.db.query(models.Staff).filter(
+            models.Staff.id == best_staff["id"]
+        ).first()
+
+        if not staff:
+            return {"error": "Staff member not found."}
+
+        # Get service type and duration
+        service_type, _ = infer_service_type(complaint)
+        duration_minutes = get_service_duration_minutes(service_type)
+
+        # Generate slots
+        all_slots = self.tools._generate_slots(
+            staff=staff,
+            duration_minutes=duration_minutes,
+            max_slots=10
+        )
+
+        # Filter by time preference if specified
+        if time_preference:
+            pref = time_preference.lower()
+            filtered = []
+            for slot in all_slots:
+                hour = slot["start_time"].hour
+                weekday = slot["start_time"].weekday()
+
+                if "morning" in pref and hour < 12:
+                    filtered.append(slot)
+                elif "afternoon" in pref and 12 <= hour < 17:
+                    filtered.append(slot)
+                elif "evening" in pref and hour >= 17:
+                    filtered.append(slot)
+                elif "weekend" in pref and weekday >= 5:
+                    filtered.append(slot)
+
+            if filtered:
+                all_slots = filtered
+
+        # Format slots for response
+        formatted_slots = []
+        for slot in all_slots[:5]:
+            formatted_slots.append({
+                "start_time": slot["start_time"].isoformat(),
+                "end_time": slot["end_time"].isoformat(),
+                "display": slot["start_time"].strftime("%A, %B %d at %I:%M %p"),
+                "staff_name": staff.name,
+                "staff_id": staff.id
+            })
+
+        return {
+            "status": "success",
+            "slots": formatted_slots,
+            "service_type": service_type,
+            "duration_minutes": duration_minutes,
+            "recommended_staff": {
+                "name": staff.name,
+                "role": staff.role
+            },
+            "message": f"Found {len(formatted_slots)} available slots with {staff.name}"
+        }
+
+    async def _tool_get_appointments(
+        self,
+        pet_name: Optional[str],
+        owner_name: str
+    ) -> Dict[str, Any]:
+        """Get upcoming appointments."""
+        query = self.db.query(models.Booking).filter(
+            models.Booking.status == "confirmed",
+            models.Booking.start_time > datetime.utcnow()
+        )
+
+        # Filter by owner
+        client = self.db.query(models.Client).filter(
+            models.Client.name.ilike(f"%{owner_name}%")
+        ).first()
+
+        if client:
+            query = query.filter(models.Booking.client_id == client.id)
+
+        # Filter by pet if specified
+        if pet_name:
+            pet = self.db.query(models.Pet).filter(
+                models.Pet.name.ilike(f"%{pet_name}%")
+            ).first()
+            if pet:
+                query = query.filter(models.Booking.pet_id == pet.id)
+
+        bookings = query.order_by(models.Booking.start_time).limit(5).all()
+
+        if not bookings:
+            return {
+                "status": "none",
+                "message": "No upcoming appointments found."
+            }
+
+        appointments = []
+        for b in bookings:
+            pet = self.db.query(models.Pet).filter(models.Pet.id == b.pet_id).first()
+            staff = self.db.query(models.Staff).filter(models.Staff.id == b.staff_id).first()
+
+            appointments.append({
+                "date": b.start_time.strftime("%A, %B %d"),
+                "time": b.start_time.strftime("%I:%M %p"),
+                "pet_name": pet.name if pet else "Unknown",
+                "reason": b.complaint_reason,
+                "with": staff.name if staff else "Staff"
+            })
+
+        return {
+            "status": "success",
+            "appointments": appointments,
+            "message": f"Found {len(appointments)} upcoming appointment(s)"
+        }
+
+    async def _tool_get_my_pets(self, owner_name: str) -> Dict[str, Any]:
+        """Get all pets for the current client."""
+        client = self.db.query(models.Client).filter(
+            models.Client.name.ilike(f"%{owner_name}%")
+        ).first()
+
+        if not client:
+            return {"status": "error", "message": "Could not find your account."}
+
+        pets = self.db.query(models.Pet).filter(
+            models.Pet.client_id == client.id
+        ).all()
+
+        if not pets:
+            return {
+                "status": "none",
+                "message": "You don't have any pets registered yet."
+            }
+
+        pet_list = []
+        for pet in pets:
+            age_str = "Unknown"
+            if pet.date_of_birth:
+                today = datetime.now().date()
+                if pet.date_of_birth <= today:
+                    age_delta = today - pet.date_of_birth
+                    years = age_delta.days // 365
+                    if years > 0:
+                        age_str = f"{years} year{'s' if years != 1 else ''} old"
+                    else:
+                        months = age_delta.days // 30
+                        age_str = f"{months} month{'s' if months != 1 else ''} old"
+
+            pet_list.append({
+                "name": pet.name,
+                "species": pet.species,
+                "breed": pet.breed or "Unknown",
+                "age": age_str
+            })
+
+        return {
+            "status": "success",
+            "pets": pet_list,
+            "message": f"You have {len(pet_list)} pet(s) registered."
+        }
+
+    def _tool_get_clinic_info(self) -> Dict[str, Any]:
+        """Get clinic information."""
+        clinic = self.db.query(models.Clinic).first()
+
+        if clinic:
+            return {
+                "status": "success",
+                "name": clinic.name,
+                "address": clinic.address,
+                "phone": clinic.phone,
+                "email": clinic.email,
+                "hours": "Monday-Friday: 9:00 AM - 5:00 PM, Saturday: 9:00 AM - 2:00 PM, Sunday: Closed",
+                "services": [
+                    "Wellness Exams & Vaccinations",
+                    "Sick Pet Visits",
+                    "Surgery (Spay/Neuter, Dental, Orthopedic)",
+                    "Dental Cleanings",
+                    "Emergency Care",
+                    "Dermatology",
+                    "Behavioral Consultations",
+                    "Exotic Pet Care"
+                ],
+                "emergency_note": "For after-hours emergencies, please call our emergency line or visit the nearest 24-hour animal hospital."
+            }
+
+        return {
+            "status": "success",
+            "name": "Interpaws Veterinary Clinic",
+            "hours": "Monday-Friday: 9:00 AM - 5:00 PM, Saturday: 9:00 AM - 2:00 PM, Sunday: Closed",
+            "services": [
+                "Wellness Exams & Vaccinations",
+                "Sick Pet Visits",
+                "Surgery",
+                "Dental Care",
+                "Emergency Care"
+            ]
         }

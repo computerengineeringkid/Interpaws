@@ -80,18 +80,39 @@ class AgentTools:
         return service_type, rationale, staff_matches
 
     def _generate_slots(
-        self, 
-        staff: models.Staff, 
-        duration_minutes: int, 
+        self,
+        staff: models.Staff,
+        duration_minutes: int,
         max_slots: int = 3,
-        client_id: Optional[int] = None
+        client_id: Optional[int] = None,
+        target_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
-        """Generate available slots, prioritizing by client's historical patterns."""
+        """Generate available slots, prioritizing by client's historical patterns.
+
+        If target_date is provided, only returns slots for that specific date.
+        Otherwise, searches 14 days ahead (expanded from 5 days).
+        """
+        from datetime import date as date_type
+
         now = datetime.utcnow()
         slots: List[Dict[str, Any]] = []
-        end_window = now + timedelta(days=5)
-        cursor = now
-        
+
+        # If target_date is provided, only search that date
+        if target_date:
+            # Handle both date and datetime objects
+            if isinstance(target_date, date_type) and not isinstance(target_date, datetime):
+                search_date = datetime.combine(target_date, datetime.min.time())
+            else:
+                search_date = target_date
+            start_window = search_date
+            end_window = search_date + timedelta(days=1)
+        else:
+            # Default: search 14 days ahead (expanded from 5)
+            start_window = now
+            end_window = now + timedelta(days=14)
+
+        cursor = start_window
+
         # Get client preferences if available
         preferred_day = None
         preferred_time = None
@@ -99,10 +120,10 @@ class AgentTools:
             patterns = self._get_client_patterns(client_id)
             preferred_day = patterns.get("preferred_day")
             preferred_time = patterns.get("preferred_time_period")
-        
+
         # Collect all available slots first
         all_slots = []
-        while cursor <= end_window:
+        while cursor < end_window:
             day_start = cursor.replace(hour=9, minute=0, second=0, microsecond=0)
             for hour in range(9, 17):
                 start_time = day_start.replace(hour=hour)
@@ -123,7 +144,7 @@ class AgentTools:
                             score += 5
                         elif preferred_time == "evening" and start_time.hour >= 17:
                             score += 5
-                    
+
                     all_slots.append({
                         "start_time": start_time,
                         "end_time": end_time,
@@ -132,10 +153,10 @@ class AgentTools:
                         "score": score
                     })
             cursor += timedelta(days=1)
-        
+
         # Sort by score (highest first), then by time (earliest first)
         all_slots.sort(key=lambda s: (-s["score"], s["start_time"]))
-        
+
         # Return top slots
         return all_slots[:max_slots]
     

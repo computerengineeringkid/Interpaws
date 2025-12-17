@@ -305,47 +305,101 @@ class StaffAgentTools:
     # =========================================================================
 
     async def check_medication_stock(self, medication_name: Optional[str] = None) -> Dict[str, Any]:
-        """Check medication stock levels."""
+        """Check inventory stock levels (medications, equipment, supplies)."""
         try:
             if medication_name:
-                # Search for specific medication
+                # Search for specific item in InventoryItem table
+                items = (
+                    self.db.query(models.InventoryItem)
+                    .filter(
+                        models.InventoryItem.name.ilike(f"%{medication_name}%"),
+                        models.InventoryItem.is_active == True
+                    )
+                    .all()
+                )
+
+                # Also check legacy Medication table
                 medications = (
                     self.db.query(models.Medication)
                     .filter(models.Medication.name.ilike(f"%{medication_name}%"))
                     .all()
                 )
 
-                if not medications:
+                if not items and not medications:
                     return {
                         "status": "not_found",
-                        "message": f"No medication found matching '{medication_name}'."
+                        "message": f"No inventory item found matching '{medication_name}'."
                     }
 
-                results = [{
-                    "name": med.name,
-                    "stock_quantity": med.stock_quantity,
-                    "unit": med.unit,
-                    "status": "Out of Stock" if med.stock_quantity == 0 else
-                             "Low Stock" if med.stock_quantity < 10 else "In Stock"
-                } for med in medications]
+                results = []
+                # Add InventoryItem results
+                for item in items:
+                    status = "Out of Stock" if item.stock_quantity == 0 else \
+                             "Low Stock" if item.stock_quantity < item.min_stock_level else "In Stock"
+                    results.append({
+                        "name": item.name,
+                        "category": item.category,
+                        "stock_quantity": item.stock_quantity,
+                        "min_stock_level": item.min_stock_level,
+                        "unit": item.unit,
+                        "location": item.location,
+                        "status": status
+                    })
+
+                # Add legacy Medication results (if not already found in InventoryItem)
+                item_names = [i.name.lower() for i in items]
+                for med in medications:
+                    if med.name.lower() not in item_names:
+                        results.append({
+                            "name": med.name,
+                            "category": "medications",
+                            "stock_quantity": med.stock_quantity,
+                            "min_stock_level": 10,  # Default threshold for legacy
+                            "unit": med.unit,
+                            "status": "Out of Stock" if med.stock_quantity == 0 else
+                                     "Low Stock" if med.stock_quantity < 10 else "In Stock"
+                        })
 
                 return {
                     "status": "success",
-                    "medications": results
+                    "items": results,
+                    "total_found": len(results)
                 }
 
             else:
-                # Return summary of all medications
-                medications = self.db.query(models.Medication).all()
+                # Return summary of all inventory
+                items = self.db.query(models.InventoryItem).filter(
+                    models.InventoryItem.is_active == True
+                ).all()
 
                 out_of_stock = []
                 low_stock = []
                 in_stock = []
 
+                for item in items:
+                    item_info = {
+                        "name": item.name,
+                        "category": item.category,
+                        "stock_quantity": item.stock_quantity,
+                        "min_stock_level": item.min_stock_level,
+                        "unit": item.unit,
+                        "location": item.location
+                    }
+                    if item.stock_quantity == 0:
+                        out_of_stock.append(item_info)
+                    elif item.stock_quantity < item.min_stock_level:
+                        low_stock.append(item_info)
+                    else:
+                        in_stock.append(item_info)
+
+                # Also include legacy medications
+                medications = self.db.query(models.Medication).all()
                 for med in medications:
                     med_info = {
                         "name": med.name,
+                        "category": "medications",
                         "stock_quantity": med.stock_quantity,
+                        "min_stock_level": 10,
                         "unit": med.unit
                     }
                     if med.stock_quantity == 0:
@@ -355,10 +409,12 @@ class StaffAgentTools:
                     else:
                         in_stock.append(med_info)
 
+                total_items = len(items) + len(medications)
+
                 return {
                     "status": "success",
                     "summary": {
-                        "total_medications": len(medications),
+                        "total_items": total_items,
                         "out_of_stock_count": len(out_of_stock),
                         "low_stock_count": len(low_stock),
                         "in_stock_count": len(in_stock)
@@ -371,27 +427,56 @@ class StaffAgentTools:
             return {"status": "error", "message": f"Error checking inventory: {str(e)}"}
 
     async def get_low_stock_alerts(self) -> Dict[str, Any]:
-        """Get all medications that need reordering."""
+        """Get all inventory items that need reordering."""
         try:
-            low_stock = (
+            alerts = []
+
+            # Check InventoryItem table (uses min_stock_level for smart alerts)
+            items = self.db.query(models.InventoryItem).filter(
+                models.InventoryItem.is_active == True
+            ).all()
+
+            for item in items:
+                if item.stock_quantity <= item.min_stock_level:
+                    urgency = "CRITICAL" if item.stock_quantity == 0 else "LOW"
+                    alerts.append({
+                        "name": item.name,
+                        "category": item.category,
+                        "current_stock": item.stock_quantity,
+                        "min_stock_level": item.min_stock_level,
+                        "unit": item.unit,
+                        "location": item.location,
+                        "supplier": item.supplier,
+                        "urgency": urgency
+                    })
+
+            # Also check legacy Medication table (uses hardcoded threshold of 10)
+            medications = (
                 self.db.query(models.Medication)
                 .filter(models.Medication.stock_quantity < 10)
                 .order_by(models.Medication.stock_quantity)
                 .all()
             )
 
-            alerts = [{
-                "name": med.name,
-                "current_stock": med.stock_quantity,
-                "unit": med.unit,
-                "urgency": "CRITICAL" if med.stock_quantity == 0 else "LOW"
-            } for med in low_stock]
+            for med in medications:
+                alerts.append({
+                    "name": med.name,
+                    "category": "medications",
+                    "current_stock": med.stock_quantity,
+                    "min_stock_level": 10,
+                    "unit": med.unit,
+                    "urgency": "CRITICAL" if med.stock_quantity == 0 else "LOW"
+                })
+
+            # Sort by urgency (CRITICAL first) then by stock quantity
+            alerts.sort(key=lambda x: (0 if x["urgency"] == "CRITICAL" else 1, x["current_stock"]))
 
             return {
                 "status": "success",
                 "alerts": alerts,
                 "total_alerts": len(alerts),
-                "critical_count": sum(1 for a in alerts if a["urgency"] == "CRITICAL")
+                "critical_count": sum(1 for a in alerts if a["urgency"] == "CRITICAL"),
+                "message": f"Found {len(alerts)} items needing attention." if alerts else "All inventory levels are adequate."
             }
 
         except Exception as e:
@@ -454,6 +539,174 @@ Guidelines:
 
         except Exception as e:
             return {"status": "error", "message": f"Error assessing symptoms: {str(e)}"}
+
+    # =========================================================================
+    # MEDICATION DOSING REFERENCE
+    # =========================================================================
+
+    # Standard veterinary medication dosing reference (for clinical staff use)
+    # Dosages are in mg/kg with typical frequency
+    MEDICATION_DOSING_REFERENCE = {
+        "cephalexin": {
+            "class": "Antibiotic (Cephalosporin)",
+            "dog": {"dose_mg_per_kg": (10, 30), "frequency": "Every 8-12 hours", "notes": "Common for skin/soft tissue infections"},
+            "cat": {"dose_mg_per_kg": (15, 30), "frequency": "Every 8-12 hours", "notes": "Use cautiously in cats with kidney issues"},
+            "common_forms": ["250mg capsules", "500mg capsules", "oral suspension"],
+        },
+        "amoxicillin": {
+            "class": "Antibiotic (Penicillin)",
+            "dog": {"dose_mg_per_kg": (10, 25), "frequency": "Every 8-12 hours", "notes": "Broad spectrum, good for respiratory/UTI"},
+            "cat": {"dose_mg_per_kg": (10, 25), "frequency": "Every 12 hours", "notes": "Well tolerated in cats"},
+            "common_forms": ["250mg capsules", "500mg capsules", "oral suspension"],
+        },
+        "amoxicillin-clavulanate": {
+            "class": "Antibiotic (Penicillin + Beta-lactamase inhibitor)",
+            "dog": {"dose_mg_per_kg": (12.5, 25), "frequency": "Every 12 hours", "notes": "Enhanced spectrum, good for resistant infections"},
+            "cat": {"dose_mg_per_kg": (12.5, 25), "frequency": "Every 12 hours", "notes": "Give with food to reduce GI upset"},
+            "common_forms": ["62.5mg tablets", "125mg tablets", "250mg tablets", "375mg tablets"],
+        },
+        "metronidazole": {
+            "class": "Antibiotic/Antiprotozoal",
+            "dog": {"dose_mg_per_kg": (10, 25), "frequency": "Every 12 hours", "notes": "GI infections, giardia. Max 65mg/kg/day"},
+            "cat": {"dose_mg_per_kg": (10, 25), "frequency": "Every 12-24 hours", "notes": "Bitter taste - may need compounding"},
+            "common_forms": ["250mg tablets", "500mg tablets"],
+        },
+        "meloxicam": {
+            "class": "NSAID (Pain/Inflammation)",
+            "dog": {"dose_mg_per_kg": (0.1, 0.2), "frequency": "Once daily", "notes": "Loading dose 0.2, maintenance 0.1. Give with food"},
+            "cat": {"dose_mg_per_kg": (0.05, 0.1), "frequency": "Once daily (short term only)", "notes": "CAUTION: Cats are sensitive to NSAIDs. Short-term use only"},
+            "common_forms": ["1.5mg/ml oral suspension", "7.5mg tablets"],
+        },
+        "carprofen": {
+            "class": "NSAID (Pain/Inflammation)",
+            "dog": {"dose_mg_per_kg": (2, 4), "frequency": "Once daily or divided BID", "notes": "Can give 4mg/kg once or 2mg/kg twice daily"},
+            "cat": {"dose_mg_per_kg": (0, 0), "frequency": "Not recommended", "notes": "NOT approved for cats"},
+            "common_forms": ["25mg tablets", "75mg tablets", "100mg tablets"],
+        },
+        "gabapentin": {
+            "class": "Analgesic/Anticonvulsant",
+            "dog": {"dose_mg_per_kg": (5, 10), "frequency": "Every 8-12 hours", "notes": "Neuropathic pain, seizures. May cause sedation"},
+            "cat": {"dose_mg_per_kg": (5, 10), "frequency": "Every 8-12 hours", "notes": "Good for anxiety/pain. Avoid products with xylitol"},
+            "common_forms": ["100mg capsules", "300mg capsules", "oral solution"],
+        },
+        "tramadol": {
+            "class": "Opioid Analgesic",
+            "dog": {"dose_mg_per_kg": (2, 5), "frequency": "Every 8-12 hours", "notes": "Moderate pain. Watch for sedation/GI upset"},
+            "cat": {"dose_mg_per_kg": (1, 2), "frequency": "Every 12 hours", "notes": "Use lower doses in cats"},
+            "common_forms": ["50mg tablets"],
+        },
+        "prednisone": {
+            "class": "Corticosteroid",
+            "dog": {"dose_mg_per_kg": (0.5, 2), "frequency": "Once daily initially, then taper", "notes": "Anti-inflammatory: 0.5-1mg/kg. Immunosuppressive: 2mg/kg"},
+            "cat": {"dose_mg_per_kg": (1, 2), "frequency": "Once daily initially, then taper", "notes": "Cats may need higher doses. Prednisolone preferred"},
+            "common_forms": ["5mg tablets", "10mg tablets", "20mg tablets"],
+        },
+        "diphenhydramine": {
+            "class": "Antihistamine",
+            "dog": {"dose_mg_per_kg": (2, 4), "frequency": "Every 8-12 hours", "notes": "Allergies, mild sedation, motion sickness"},
+            "cat": {"dose_mg_per_kg": (1, 2), "frequency": "Every 8-12 hours", "notes": "Can be sedating"},
+            "common_forms": ["25mg tablets", "25mg capsules"],
+        },
+        "famotidine": {
+            "class": "H2 Blocker (Antacid)",
+            "dog": {"dose_mg_per_kg": (0.5, 1), "frequency": "Every 12-24 hours", "notes": "GI ulcers, acid reflux. Give before meals"},
+            "cat": {"dose_mg_per_kg": (0.5, 1), "frequency": "Every 12-24 hours", "notes": "Well tolerated"},
+            "common_forms": ["10mg tablets", "20mg tablets"],
+        },
+        "omeprazole": {
+            "class": "Proton Pump Inhibitor",
+            "dog": {"dose_mg_per_kg": (0.5, 1), "frequency": "Once daily", "notes": "Give 30 min before meals. More potent than famotidine"},
+            "cat": {"dose_mg_per_kg": (0.5, 1), "frequency": "Once daily", "notes": "Give before meals"},
+            "common_forms": ["10mg capsules", "20mg capsules"],
+        },
+        "cerenia": {
+            "class": "Antiemetic (maropitant)",
+            "dog": {"dose_mg_per_kg": (2, 2), "frequency": "Once daily", "notes": "Prevents vomiting. Can use for motion sickness"},
+            "cat": {"dose_mg_per_kg": (1, 1), "frequency": "Once daily", "notes": "Injectable available for acute cases"},
+            "common_forms": ["16mg tablets", "24mg tablets", "60mg tablets", "injectable"],
+        },
+        "apoquel": {
+            "class": "Janus Kinase Inhibitor (Itch Relief)",
+            "dog": {"dose_mg_per_kg": (0.4, 0.6), "frequency": "Every 12 hours x 14 days, then once daily", "notes": "For allergic dermatitis/itch. Not for dogs <12 months"},
+            "cat": {"dose_mg_per_kg": (0, 0), "frequency": "Not approved", "notes": "NOT approved for cats"},
+            "common_forms": ["3.6mg tablets", "5.4mg tablets", "16mg tablets"],
+        },
+        "trazodone": {
+            "class": "Anxiolytic/Sedative",
+            "dog": {"dose_mg_per_kg": (2, 5), "frequency": "Every 8-12 hours as needed", "notes": "Anxiety, fear, post-op sedation. May combine with gabapentin"},
+            "cat": {"dose_mg_per_kg": (2, 5), "frequency": "Every 8-12 hours as needed", "notes": "Good pre-visit anxiolytic"},
+            "common_forms": ["50mg tablets", "100mg tablets"],
+        },
+    }
+
+    async def get_medication_dosing(
+        self,
+        medication_name: str,
+        weight_lbs: Optional[float] = None,
+        species: str = "dog"
+    ) -> Dict[str, Any]:
+        """Get medication dosing guidelines from clinical reference."""
+        try:
+            # Normalize inputs
+            med_name = medication_name.lower().strip()
+            species = species.lower().strip() if species else "dog"
+
+            # Search for medication (allow partial matches)
+            matched_med = None
+            matched_key = None
+            for key, data in self.MEDICATION_DOSING_REFERENCE.items():
+                if key in med_name or med_name in key:
+                    matched_med = data
+                    matched_key = key
+                    break
+
+            if not matched_med:
+                # List available medications
+                available = list(self.MEDICATION_DOSING_REFERENCE.keys())
+                return {
+                    "status": "not_found",
+                    "message": f"'{medication_name}' not found in dosing reference.",
+                    "available_medications": available,
+                    "suggestion": "Try searching for one of the listed medications."
+                }
+
+            # Get species-specific dosing
+            if species not in matched_med:
+                species = "dog"  # Default to dog if species not found
+
+            species_data = matched_med.get(species, matched_med.get("dog"))
+
+            # Build response
+            result = {
+                "status": "success",
+                "medication": matched_key.title(),
+                "class": matched_med["class"],
+                "species": species,
+                "dose_range_mg_per_kg": species_data["dose_mg_per_kg"],
+                "frequency": species_data["frequency"],
+                "clinical_notes": species_data["notes"],
+                "common_forms": matched_med.get("common_forms", []),
+            }
+
+            # Calculate actual dose if weight provided
+            if weight_lbs and species_data["dose_mg_per_kg"][0] > 0:
+                weight_kg = weight_lbs / 2.205
+                low_dose = species_data["dose_mg_per_kg"][0]
+                high_dose = species_data["dose_mg_per_kg"][1]
+
+                result["weight_kg"] = round(weight_kg, 2)
+                result["calculated_dose"] = {
+                    "low_mg": round(low_dose * weight_kg, 1),
+                    "high_mg": round(high_dose * weight_kg, 1),
+                    "range_description": f"{round(low_dose * weight_kg, 1)} - {round(high_dose * weight_kg, 1)} mg per dose"
+                }
+
+            result["disclaimer"] = "Reference dosing only. Always verify with veterinarian and adjust based on patient condition."
+
+            return result
+
+        except Exception as e:
+            return {"status": "error", "message": f"Error looking up dosing: {str(e)}"}
 
     # =========================================================================
     # ANALYTICS
@@ -844,8 +1097,45 @@ Guidelines:
         quantity_change: int,
         reason: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Update medication stock levels."""
+        """Update inventory stock levels."""
         try:
+            # First try InventoryItem table
+            item = (
+                self.db.query(models.InventoryItem)
+                .filter(
+                    models.InventoryItem.name.ilike(f"%{medication_name}%"),
+                    models.InventoryItem.is_active == True
+                )
+                .first()
+            )
+
+            if item:
+                old_quantity = item.stock_quantity
+                new_quantity = max(0, old_quantity + quantity_change)
+                item.stock_quantity = new_quantity
+                if quantity_change > 0:
+                    item.last_restocked = datetime.now()
+                self.db.commit()
+
+                status_msg = ""
+                if new_quantity <= item.min_stock_level and new_quantity > 0:
+                    status_msg = f" (Warning: Stock is now below minimum level of {item.min_stock_level})"
+                elif new_quantity == 0:
+                    status_msg = " (Warning: Item is now OUT OF STOCK)"
+
+                return {
+                    "status": "success",
+                    "message": f"{'Added' if quantity_change > 0 else 'Removed'} {abs(quantity_change)} {item.unit} of {item.name}.{status_msg}",
+                    "item": item.name,
+                    "category": item.category,
+                    "previous_quantity": old_quantity,
+                    "new_quantity": new_quantity,
+                    "min_stock_level": item.min_stock_level,
+                    "change": quantity_change,
+                    "reason": reason or "No reason provided"
+                }
+
+            # Fall back to legacy Medication table
             medication = (
                 self.db.query(models.Medication)
                 .filter(models.Medication.name.ilike(f"%{medication_name}%"))
@@ -853,18 +1143,18 @@ Guidelines:
             )
 
             if not medication:
-                return {"status": "error", "message": f"Medication '{medication_name}' not found."}
+                return {"status": "error", "message": f"Item '{medication_name}' not found in inventory."}
 
             old_quantity = medication.stock_quantity
             new_quantity = max(0, old_quantity + quantity_change)
             medication.stock_quantity = new_quantity
             self.db.commit()
 
-            action = "added" if quantity_change > 0 else "removed"
             return {
                 "status": "success",
                 "message": f"{'Added' if quantity_change > 0 else 'Removed'} {abs(quantity_change)} {medication.unit} of {medication.name}.",
-                "medication": medication.name,
+                "item": medication.name,
+                "category": "medications",
                 "previous_quantity": old_quantity,
                 "new_quantity": new_quantity,
                 "change": quantity_change,
@@ -1364,12 +1654,24 @@ Guidelines:
                 .count()
             )
 
-            # Low stock medications
-            low_stock = (
+            # Low stock items (from both InventoryItem and Medication tables)
+            low_stock_items = 0
+
+            # Count low stock from InventoryItem table
+            items = self.db.query(models.InventoryItem).filter(
+                models.InventoryItem.is_active == True
+            ).all()
+            for item in items:
+                if item.stock_quantity <= item.min_stock_level:
+                    low_stock_items += 1
+
+            # Count low stock from legacy Medication table
+            low_stock_meds = (
                 self.db.query(models.Medication)
                 .filter(models.Medication.stock_quantity < 10)
                 .count()
             )
+            low_stock_items += low_stock_meds
 
             # Species breakdown
             species_counts = {}
@@ -1387,7 +1689,7 @@ Guidelines:
                     "appointments_today": today_appointments,
                     "appointments_this_week": week_appointments,
                     "pending_surgeries": pending_surgeries,
-                    "low_stock_alerts": low_stock,
+                    "low_stock_alerts": low_stock_items,
                     "species_breakdown": species_counts
                 }
             }

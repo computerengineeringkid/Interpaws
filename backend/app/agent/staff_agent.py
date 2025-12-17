@@ -35,6 +35,7 @@ When staff ask about:
 - **Schedule/appointments** → Call `get_my_schedule` or `get_all_bookings`
 - **Patient/pet information** → Call `search_patient`
 - **Medication/inventory** → Call `check_inventory` or `get_low_stock_alerts`
+- **Drug dosing/dosage questions** → Call `get_medication_dosing` with medication name and weight
 - **Statistics/analytics** → Call `get_analytics` or `get_dashboard_stats`
 - **Booking for a client** → Call `book_for_client`
 - **Staff workload/busiest** → Call `get_staff_workload`
@@ -435,6 +436,29 @@ def get_staff_tools() -> List[types.Tool]:
                 description="Get clinic dashboard statistics - total clients, pets, appointments, surgeries, low stock.",
                 parameters=types.Schema(type=types.Type.OBJECT, properties={})
             ),
+            # Medication dosing reference tool
+            types.FunctionDeclaration(
+                name="get_medication_dosing",
+                description="Get standard veterinary medication dosing guidelines. Use this to look up dosage ranges for common medications based on animal weight. This is a clinical reference tool for staff.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "medication_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Name of the medication (e.g., 'cephalexin', 'amoxicillin', 'meloxicam')"
+                        ),
+                        "weight_lbs": types.Schema(
+                            type=types.Type.NUMBER,
+                            description="Animal weight in pounds"
+                        ),
+                        "species": types.Schema(
+                            type=types.Type.STRING,
+                            description="Species (dog, cat, etc.)"
+                        )
+                    },
+                    required=["medication_name"]
+                )
+            ),
             types.FunctionDeclaration(
                 name="schedule_surgery",
                 description="Schedule a new surgery for a pet.",
@@ -668,6 +692,13 @@ class StaffAgent:
             elif tool_name == "get_dashboard_stats":
                 return await self.tools.get_dashboard_stats()
 
+            elif tool_name == "get_medication_dosing":
+                return await self.tools.get_medication_dosing(
+                    medication_name=args.get("medication_name", ""),
+                    weight_lbs=args.get("weight_lbs"),
+                    species=args.get("species", "dog")
+                )
+
             elif tool_name == "schedule_surgery":
                 return await self.tools.schedule_surgery(
                     pet_name=args.get("pet_name", ""),
@@ -718,6 +749,7 @@ class StaffAgent:
             "get_staff_workload": "staff_workload",
             "get_all_staff": "staff_lookup",
             "reschedule_booking": "booking_management",
+            "get_medication_dosing": "medication_dosing",
         }
 
         # Use the first tool called to determine intent
@@ -737,5 +769,6 @@ class StaffAgent:
             "staff_workload": ["View all staff", "Check schedule", "Show analytics"],
             "staff_lookup": ["Check workload", "View schedule", "Book appointment"],
             "booking_management": ["View schedule", "Search patient", "Check availability"],
+            "medication_dosing": ["Check inventory", "View patient", "Assess symptoms"],
         }
         return suggestions_map.get(intent, ["View schedule", "Check inventory"])

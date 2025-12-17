@@ -302,6 +302,14 @@ async def agentic_chat(
             function_calls = []
             text_parts = []
 
+            # Safely handle None content or parts
+            if not candidate.content or not candidate.content.parts:
+                return AgenticResponse(
+                    text="I'm sorry, I couldn't generate a response. Please try again.",
+                    tool_calls_made=tool_calls_made,
+                    tool_results=tool_results
+                )
+
             for part in candidate.content.parts:
                 if hasattr(part, 'function_call') and part.function_call:
                     function_calls.append(part.function_call)

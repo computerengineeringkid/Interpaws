@@ -59,6 +59,9 @@ For TRUE EMERGENCIES (seizures, difficulty breathing, poisoning, severe bleeding
 - Use the pet's name naturally
 - Confirm bookings clearly with date, time, and what it's for
 - If a requested time isn't available, offer alternatives
+- IMPORTANT: When a client asks for a specific date (e.g., "December 18th", "the 20th", "next Tuesday"),
+  you MUST use the date_preference parameter in find_available_slots with the date in YYYY-MM-DD format.
+  Always convert their requested date to this format (e.g., "December 18th" → "2024-12-18").
 
 ## HEALTH ADVICE GUIDELINES
 - You can share what symptoms might indicate and home care tips
@@ -108,6 +111,10 @@ def get_client_tools() -> List[types.Tool]:
                         "time_preference": types.Schema(
                             type=types.Type.STRING,
                             description="Optional time preference: 'morning', 'afternoon', 'evening', or 'weekend'"
+                        ),
+                        "date_preference": types.Schema(
+                            type=types.Type.STRING,
+                            description="Optional specific date in YYYY-MM-DD format (e.g., '2024-12-18'). Use this when the client asks for a specific date."
                         )
                     },
                     required=["complaint"]
@@ -327,6 +334,7 @@ class InterpawsAgent:
                 return await self._tool_find_slots(
                     args.get("complaint", "general checkup"),
                     args.get("time_preference"),
+                    args.get("date_preference"),
                     owner_name
                 )
 
@@ -430,6 +438,7 @@ class InterpawsAgent:
         self,
         complaint: str,
         time_preference: Optional[str],
+        date_preference: Optional[str],
         owner_name: str
     ) -> Dict[str, Any]:
         """Find available appointment slots."""
@@ -452,11 +461,24 @@ class InterpawsAgent:
         service_type, _ = infer_service_type(complaint)
         duration_minutes = get_service_duration_minutes(service_type)
 
-        # Generate slots
+        # Parse target date if specified
+        target_date = None
+        if date_preference:
+            try:
+                target_date = datetime.strptime(date_preference, "%Y-%m-%d").date()
+            except ValueError:
+                # Try to parse other formats
+                try:
+                    target_date = datetime.fromisoformat(date_preference).date()
+                except ValueError:
+                    pass
+
+        # Generate slots with optional target date
         all_slots = self.tools._generate_slots(
             staff=staff,
             duration_minutes=duration_minutes,
-            max_slots=10
+            max_slots=15,
+            target_date=target_date
         )
 
         # Filter by time preference if specified
@@ -489,6 +511,15 @@ class InterpawsAgent:
                 "staff_name": staff.name,
                 "staff_id": staff.id
             })
+
+        if not formatted_slots:
+            date_msg = f" on {date_preference}" if date_preference else ""
+            return {
+                "status": "no_slots",
+                "slots": [],
+                "service_type": service_type,
+                "message": f"No available slots found{date_msg} with {staff.name}. Please try a different date."
+            }
 
         return {
             "status": "success",

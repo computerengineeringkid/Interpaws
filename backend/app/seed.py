@@ -143,6 +143,41 @@ COMPLAINT_REASONS = [
     "allergic reaction with swelling",
 ]
 
+# Pet names by species
+PET_NAMES = {
+    "Dog": [
+        "Max", "Bella", "Charlie", "Luna", "Cooper", "Daisy", "Buddy", "Sadie", "Rocky", "Molly",
+        "Duke", "Bailey", "Tucker", "Maggie", "Bear", "Sophie", "Bentley", "Chloe", "Zeus", "Penny",
+        "Milo", "Zoey", "Jack", "Stella", "Toby", "Lily", "Winston", "Roxy", "Murphy", "Ruby",
+        "Gus", "Coco", "Oliver", "Gracie", "Leo", "Rosie", "Oscar", "Lola", "Louie", "Nala",
+        "Finn", "Pepper", "Scout", "Willow", "Beau", "Lucy", "Bruno", "Piper", "Rex", "Ellie"
+    ],
+    "Cat": [
+        "Oliver", "Luna", "Leo", "Bella", "Milo", "Chloe", "Charlie", "Lucy", "Max", "Lily",
+        "Simba", "Nala", "Jack", "Sophie", "Loki", "Cleo", "Oscar", "Willow", "Jasper", "Stella",
+        "Felix", "Mia", "Oreo", "Pepper", "Tiger", "Daisy", "Shadow", "Zoe", "Smokey", "Olive",
+        "Gizmo", "Callie", "Salem", "Mittens", "Theo", "Cinnamon", "Binx", "Pumpkin", "Whiskers", "Pearl"
+    ],
+    "Bird": [
+        "Tweety", "Sunny", "Rio", "Kiwi", "Mango", "Coco", "Sky", "Pepper", "Blue", "Polly",
+        "Charlie", "Angel", "Lucky", "Tiki", "Ziggy", "Peanut", "Buddy", "Skittles", "Peaches", "Chirpy",
+        "Goldie", "Phoenix", "Jewel", "Storm", "Blueberry", "Ginger", "Sunshine", "Jade", "Echo", "Dusty"
+    ],
+    "Rabbit": [
+        "Thumper", "Cinnamon", "Oreo", "Bun Bun", "Snowball", "Caramel", "Pepper", "Clover", "Hazel", "Marshmallow",
+        "Cocoa", "Cotton", "Bambi", "Flopsy", "Honey", "Peanut", "Nibbles", "Butterscotch", "Cookie", "Willow",
+        "Mocha", "Patches", "Ginger", "Smokey", "Luna", "Bella", "Midnight", "Whiskers", "Shadow", "Biscuit"
+    ],
+    "Hamster": [
+        "Peanut", "Nibbles", "Cinnamon", "Biscuit", "Squeaky", "Whiskers", "Pumpkin", "Cookie", "Ginger", "Caramel",
+        "Fuzzy", "Snickers", "Teddy", "Cheddar", "Maple", "Honey", "Buttons", "Pip", "Nutmeg", "Brownie"
+    ],
+    "Reptile": [
+        "Spike", "Rex", "Draco", "Scales", "Slinky", "Ziggy", "Flash", "Godzilla", "Jade", "Camo",
+        "Titan", "Blaze", "Shadow", "Copper", "Emerald", "Rocky", "Fang", "Mossy", "Bones", "Viper"
+    ],
+}
+
 # Client preferences
 CLIENT_PREFERENCES = [
     "Prefers morning appointments between 8-10 AM",
@@ -163,7 +198,23 @@ def create_staff(db: Session, count: int = 15) -> List[models.Staff]:
     print(f"Creating {count} staff members...")
     staff_list = []
 
-    for i in range(count):
+    # Create dedicated admin account first
+    admin_skills = "Clinic administrator and lead veterinarian with expertise in general practice, team management, and patient care coordination"
+    admin_skills_vector = asyncio.run(get_embedding(admin_skills))
+    admin = models.Staff(
+        name="Dr. Admin",
+        email="admin@interpaws.com",
+        hashed_password=get_password_hash("password123"),
+        role="Veterinarian",
+        skills_description=admin_skills,
+        skills_vector=admin_skills_vector
+    )
+    db.add(admin)
+    staff_list.append(admin)
+    print("  Created admin account: admin@interpaws.com")
+
+    # Create remaining random staff
+    for i in range(count - 1):
         role = random.choice(STAFF_ROLES)
         name = fake.name()
         email = fake.unique.email()
@@ -229,29 +280,38 @@ def create_clients(db: Session, clinic_id: int, count: int = 100) -> List[models
 
 
 def create_pets(db: Session, clients: List[models.Client]) -> List[models.Pet]:
-    """Generate 1-3 pets for each client."""
+    """Generate 1-3 pets for each client with realistic pet names."""
     print("Creating pets...")
     pets_list = []
-    
+
     for client in clients:
         # Each client gets 1-3 pets
         num_pets = random.randint(1, 3)
-        
+
         for _ in range(num_pets):
             species = random.choice(list(PET_SPECIES_BREEDS.keys()))
             breed = random.choice(PET_SPECIES_BREEDS[species])
-            name = fake.first_name()
-            
+
+            # Get species-appropriate name (with fallback to Dog names)
+            species_names = PET_NAMES.get(species, PET_NAMES["Dog"])
+            name = random.choice(species_names)
+
+            # Random date of birth (1-15 years ago)
+            years_old = random.randint(1, 15)
+            months_offset = random.randint(0, 11)
+            dob = datetime.now() - timedelta(days=years_old * 365 + months_offset * 30)
+
             pet = models.Pet(
                 name=name,
                 species=species,
                 breed=breed,
+                date_of_birth=dob,
                 client_id=client.id
             )
-            
+
             db.add(pet)
             pets_list.append(pet)
-    
+
     db.commit()
     print(f"Created {len(pets_list)} pets")
     return pets_list
